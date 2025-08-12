@@ -16,14 +16,6 @@ from app.models.responses import (
 
 
 class TronService:
-    """Minimal client for interacting with TronScan.
-
-    This service wraps the TronScan REST endpoints and converts raw
-    responses into the unified formats defined in the spec.  It does
-    very little validation and always attempts to return sensible
-    defaults when external requests fail.
-    """
-
     def __init__(self, api_key: Optional[str] = None) -> None:
         self.api_key = api_key or Config.TRONSCAN_API_KEY
         self.base_url = "https://apilist.tronscanapi.com"
@@ -41,39 +33,51 @@ class TronService:
         return None
 
     def get_wallet_info(self, wallet_address: str) -> WalletInfoResponse:
-        account_data = self._get("/api/account", {"address": wallet_address})
-        tokens_data = self._get("/api/account/tokens", {"address": wallet_address, "limit": 50})
+        account_data = self._get("/api/accountv2", {"address": wallet_address})
+        
         native_balance = 0.0
+        wallet_tokens: List[WalletToken] = []
+        
         if account_data and isinstance(account_data, dict):
             balance_sun = account_data.get("balance") or 0
             try:
                 native_balance = float(balance_sun) / 1e6
             except Exception:
                 native_balance = 0.0
-        native_token = NativeToken(symbol="TRX", decimals=6, balance=native_balance)
-        wallet_tokens: List[WalletToken] = []
-        if tokens_data and isinstance(tokens_data, dict):
-            raw_tokens = tokens_data.get("tokens") or tokens_data.get("trc20_tokens") or []
-            for token in raw_tokens:
-                contract = token.get("tokenId") or token.get("tokenAddress") or token.get("contractAddress")
-                name = token.get("tokenName") or token.get("name") or ""
-                symbol = token.get("tokenAbbr") or token.get("symbol") or ""
-                decimals = token.get("tokenDecimal") or token.get("decimals") or 0
-                balance_raw = token.get("balance") or token.get("quantity") or token.get("amount") or 0
+            
+            with_price_tokens = account_data.get("withPriceTokens", [])
+            for token in with_price_tokens:
+                if not isinstance(token, dict):
+                    continue
+                
+                token_id = token.get("tokenId", "")
+                if token_id == "_":
+                    continue
+                
+                token_name = token.get("tokenName", "")
+                token_symbol = token.get("tokenAbbr", "")
+                token_decimals = token.get("tokenDecimal", 0)
+                token_balance_raw = token.get("balance", "0")
+                
                 try:
-                    bal = float(balance_raw) / (10 ** int(decimals))
+                    decimals_int = int(token_decimals)
+                    balance_float = float(token_balance_raw) / (10 ** decimals_int) if decimals_int > 0 else float(token_balance_raw)
                 except Exception:
-                    bal = 0.0
-                if contract:
+                    balance_float = 0.0
+                
+                if token_id and token_id.strip():
                     wallet_tokens.append(
                         WalletToken(
-                            token_address=str(contract),
-                            name=str(name),
-                            symbol=str(symbol),
-                            decimals=int(decimals),
-                            balance=bal,
+                            token_address=token_id,
+                            name=token_name,
+                            symbol=token_symbol,
+                            decimals=decimals_int,
+                            balance=balance_float,
                         )
                     )
+        
+        native_token = NativeToken(symbol="TRX", decimals=6, balance=native_balance)
+        
         return WalletInfoResponse(
             wallet_address=wallet_address,
             blockchain="tron",
@@ -82,19 +86,6 @@ class TronService:
         )
 
     def get_transactions_list(self, wallet_address: str, limit: int = 20) -> TransactionsListResponse:
-        """
-        Return a unified list of recent transfers for a Tron address.
-
-        This method queries the TRX and TRC20 transfer endpoints documented under
-        the Wallet API.  The TRX transfer endpoint returns transfers of the
-        native token (TRX/trc10) with `from` and `to` fields, while the TRC20
-        transfer endpoint returns transfers of any TRC20 token.  Both endpoints
-        support filtering by address and return amounts as strings along with
-        decimals.  We request both inbound and outbound transfers (direction=0)
-        and sort by timestamp descending.
-        """
-        # Fetch native TRX transfers (trc10). direction=0 returns both incoming
-        # and outgoing transfers.  db_version=1 filters out invalid addresses.
         trx_params = {
             "address": wallet_address,
             "limit": limit,
@@ -105,8 +96,6 @@ class TronService:
         }
         trx_data = self._get("/api/transfer/trx", trx_params)
 
-        # Fetch TRC20 transfers.  No trc20Id is specified so all tokens are
-        # returned.  direction=0 for both incoming and outgoing transfers.
         trc20_params = {
             "address": wallet_address,
             "limit": limit,
@@ -119,28 +108,23 @@ class TronService:
 
         txs: List[Transaction] = []
 
-        # Process TRX (native) transfers
         if isinstance(trx_data, dict):
             for tx in trx_data.get("data", []):
-                # Use block_timestamp or timestamp (ms) to compute ISO time
                 ts = tx.get("timestamp") or tx.get("block_timestamp")
                 try:
                     iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts) / 1000)) if ts else ""
                 except Exception:
                     iso = ""
-                # Amount is in sun (1e6 = 1 TRX)
                 amount_raw = tx.get("amount") or 0
                 try:
                     amount_fmt = float(amount_raw) / 1e6
                 except Exception:
                     amount_fmt = 0.0
-                # Fee information may not be present for simple transfers
                 fee = tx.get("energy_fee") or tx.get("fee") or 0
                 try:
                     fee_fmt = float(fee) / 1e6
                 except Exception:
                     fee_fmt = 0.0
-                # From/to fields are provided directly
                 from_addr = tx.get("from") or tx.get("ownerAddress") or ""
                 to_addr = tx.get("to") or tx.get("toAddress") or ""
                 txs.append(
@@ -159,7 +143,6 @@ class TronService:
                     )
                 )
 
-        # Process TRC20 transfers
         if isinstance(trc20_data, dict):
             for tx in trc20_data.get("data", []):
                 ts = tx.get("timestamp") or tx.get("block_timestamp")
@@ -168,7 +151,6 @@ class TronService:
                 except Exception:
                     iso = ""
                 amount_raw = tx.get("amount") or 0
-                # decimals may be present either in top-level `decimals` or nested tokenInfo
                 decimals = 0
                 if "decimals" in tx and tx.get("decimals") is not None:
                     decimals = int(tx.get("decimals"))
@@ -183,10 +165,8 @@ class TronService:
                     fee_fmt = float(fee) / 1e6
                 except Exception:
                     fee_fmt = 0.0
-                # from/to fields
                 from_addr = tx.get("from") or tx.get("ownerAddress") or ""
                 to_addr = tx.get("to") or tx.get("toAddress") or ""
-                # token symbol
                 symbol = (
                     token_info.get("tokenAbbr")
                     or token_info.get("symbol")
@@ -211,11 +191,9 @@ class TronService:
                     )
                 )
 
-        # Sort transactions by time descending and limit results
         txs.sort(key=lambda t: t.timestamp, reverse=True)
         txs = txs[:limit]
 
-        # Gather wallet info for balances
         wallet_info = self.get_wallet_info(wallet_address)
         native_symbol = wallet_info.native_token.symbol
         native_balance_formatted = format(wallet_info.native_token.balance, "f")
