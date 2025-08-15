@@ -11,3 +11,4 @@ class Config:
     TRONSCAN_API_KEY: str = os.getenv("TRONSCAN_API_KEY")
     QUICKNODE_API_URL: str = os.getenv("QUICKNODE_API_URL")
     ALCHEMY_API_KEY: str = os.getenv("ALCHEMY_API_KEY", "")
+    ETHERSCAN_API_KEY: str = os.getenv("ETHERSCAN_API_KEY")
