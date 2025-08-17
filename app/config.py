@@ -12,3 +12,4 @@ class Config:
     QUICKNODE_API_URL: str = os.getenv("QUICKNODE_API_URL")
     ALCHEMY_API_KEY: str = os.getenv("ALCHEMY_API_KEY", "")
     ETHERSCAN_API_KEY: str = os.getenv("ETHERSCAN_API_KEY")
+    BSCSCAN_API_KEY: str = os.getenv("BSCSCAN_API_KEY")
