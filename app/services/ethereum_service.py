@@ -221,22 +221,20 @@ class EthereumService:
                     fee_eth = fee_wei / 1e18
                 except Exception:
                     fee_eth = 0.0
-                
-                txs.append(
-                    Transaction(
-                        hash=tx.get("hash", ""),
-                        timestamp=iso_time,
-                        from_=tx.get("from", ""),
-                        to=tx.get("to", ""),
-                        amount=str(amount_wei),
-                        amount_formatted=str(amount_eth),
-                        token_symbol="ETH",
-                        transaction_fee=str(fee_wei),
-                        transaction_fee_formatted=str(fee_eth),
-                        status="success" if tx.get("isError") == "0" else "failed",
-                        block_number=int(tx.get("blockNumber", 0)),
-                    )
-                )
+                transaction_data = {
+                    "hash": tx.get("hash", "") or "",
+                    "timestamp": iso_time or "",
+                    "from": tx.get("from", "") or "",  # Use alias name
+                    "to": tx.get("to", "") or "",
+                    "amount": str(amount_wei),
+                    "amount_formatted": str(amount_eth),
+                    "token_symbol": "ETH",
+                    "transaction_fee": str(fee_wei),
+                    "transaction_fee_formatted": str(fee_eth),
+                    "status": "success" if tx.get("isError") == "0" else "failed",
+                    "block_number": int(tx.get("blockNumber", 0)) or 0,
+                }
+                txs.append(Transaction(**transaction_data))
         
         # Process ERC-20 token transactions
         if token_data and isinstance(token_data, list):
@@ -268,21 +266,20 @@ class EthereumService:
                 
                 symbol = tx.get("tokenSymbol", "TKN")
                 
-                txs.append(
-                    Transaction(
-                        hash=tx.get("hash", ""),
-                        timestamp=iso_time,
-                        from_=tx.get("from", ""),
-                        to=tx.get("to", ""),
-                        amount=str(amount_raw),
-                        amount_formatted=str(amount_formatted),
-                        token_symbol=str(symbol),
-                        transaction_fee=str(fee_wei),
-                        transaction_fee_formatted=str(fee_eth),
-                        status="success",  # Token transfers are typically successful if they appear
-                        block_number=int(tx.get("blockNumber", 0)),
-                    )
-                )
+                transaction_data = {
+                    "hash": tx.get("hash", "") or "",
+                    "timestamp": iso_time or "",
+                    "from": tx.get("from", "") or "",  # Use alias name
+                    "to": tx.get("to", "") or "",
+                    "amount": str(amount_raw),
+                    "amount_formatted": str(amount_formatted),
+                    "token_symbol": str(symbol),
+                    "transaction_fee": str(fee_wei),
+                    "transaction_fee_formatted": str(fee_eth),
+                    "status": "success",  # Token transfers are typically successful if they appear
+                    "block_number": int(tx.get("blockNumber", 0)) or 0,
+                }
+                txs.append(Transaction(**transaction_data))
         
         # Sort by timestamp and limit results
         txs.sort(key=lambda t: t.timestamp, reverse=True)
