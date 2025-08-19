@@ -18,14 +18,16 @@ from app.models.responses import (
 class EthereumService:
     def __init__(self, api_key: Optional[str] = None) -> None:
         self.api_key = api_key or Config.ETHERSCAN_API_KEY
-        self.base_url = "https://api.etherscan.io/api"
+        self.base_url = "https://api.etherscan.io/v2/api"
+        self.chain_id = 1  # Ethereum Mainnet
         self.session = requests.Session()
         if not self.api_key:
             raise ValueError("Etherscan API key is required")
 
     def _get(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
-            # Add API key to all requests
+            # Add chainid and API key to all requests
+            params["chainid"] = self.chain_id
             params["apikey"] = self.api_key
             resp = self.session.get(self.base_url, params=params, timeout=15)
             if resp.ok:

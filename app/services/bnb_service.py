@@ -17,25 +17,27 @@ from app.models.responses import (
 
 class BnbService:
     def __init__(self, api_key: Optional[str] = None) -> None:
-        self.api_key = api_key or Config.BSCSCAN_API_KEY
-        self.base_url = "https://api.bscscan.com/api"
+        self.api_key = api_key or Config.ETHERSCAN_API_KEY  # Using Etherscan API key now
+        self.base_url = "https://api.etherscan.io/v2/api"
+        self.chain_id = 56  # BNB Smart Chain Mainnet
         self.session = requests.Session()
         if not self.api_key:
-            raise ValueError("BscScan API key is required")
+            raise ValueError("Etherscan API key is required")
 
     def _get(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
-            # Add API key to all requests
+            # Add chainid and API key to all requests
+            params["chainid"] = self.chain_id
             params["apikey"] = self.api_key
             resp = self.session.get(self.base_url, params=params, timeout=15)
             if resp.ok:
                 data = resp.json()
-                if data.get("status") == "1":  # BscScan success status
+                if data.get("status") == "1":  # Etherscan success status
                     return data.get("result")
                 else:
-                    # Log error message from BscScan
+                    # Log error message from Etherscan
                     error_msg = data.get("message", "Unknown error")
-                    print(f"BscScan API error: {error_msg}")
+                    print(f"Etherscan API error: {error_msg}")
                     return None
         except Exception as e:
             print(f"Request error: {e}")
