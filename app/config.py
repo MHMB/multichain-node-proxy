@@ -13,3 +13,8 @@ class Config:
     ALCHEMY_API_KEY: str = os.getenv("ALCHEMY_API_KEY", "")
     ETHERSCAN_API_KEY: str = os.getenv("ETHERSCAN_API_KEY")
     BSCSCAN_API_KEY: str = os.getenv("BSCSCAN_API_KEY")
+    
+    # JWT Configuration
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-change-in-production")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))

@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException, Query
+from datetime import timedelta
+from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.models.responses import (
     WalletInfoResponse,
@@ -9,7 +11,14 @@ from app.services.tron_service import TronService
 from app.services.solana_service import SolanaService
 from app.services.ethereum_service import EthereumService
 from app.services.bnb_service import BnbService
-
+from app.auth import (
+    authenticate_user, 
+    create_access_token, 
+    get_current_user, 
+    User, 
+    Token,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
 app = FastAPI(title="Multi‑Blockchain API", version="0.1.0")
 
@@ -18,15 +27,43 @@ solana_service = SolanaService()
 ethereum_service = EthereumService()
 bnb_service = BnbService()
 
+# Authentication endpoint
+@app.post("/auth/login", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    Login endpoint to get JWT access token.
+    Default users:
+    - username: admin, password: password123
+    - username: user, password: userpass
+    """
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/auth/me", response_model=User)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    """Get current user information."""
+    return current_user
 
 @app.get("/wallet_info", response_model=WalletInfoResponse)
 async def wallet_info(
     wallet_address: str = Query(..., description="Wallet address to query"),
     blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Retrieve wallet balance and token holdings.  Delegates the call
     to the appropriate service based on the blockchain parameter.
+    Requires authentication.
     """
     chain = blockchain.lower()
     if chain == "tron":
@@ -39,16 +76,17 @@ async def wallet_info(
         return bnb_service.get_wallet_info(wallet_address)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
-
 @app.get("/transactions_list", response_model=TransactionsListResponse)
 async def transactions_list(
     wallet_address: str = Query(..., description="Wallet address to query"),
     blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
     limit: int = Query(20, description="Number of transactions to return"),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get transaction history for a wallet.  Combines native and token
     transfers into a unified list.
+    Requires authentication.
     """
     chain = blockchain.lower()
     if limit < 1:
@@ -63,15 +101,16 @@ async def transactions_list(
         return bnb_service.get_transactions_list(wallet_address, limit)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
-
 @app.get("/contract_details", response_model=ContractDetailsResponse)
 async def contract_details(
     contract_address: str = Query(..., description="Contract address to query"),
     blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get smart contract or token information.  Returns metadata for
     TRC20, SPL, ERC-20, or BEP-20 tokens.
+    Requires authentication.
     """
     chain = blockchain.lower()
     if chain == "tron":
@@ -84,8 +123,7 @@ async def contract_details(
         return bnb_service.get_contract_details(contract_address)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
-
 @app.get("/")
 async def root() -> dict:
-    """Basic health check endpoint."""
-    return {"status": "ok"}
+    """Basic health check endpoint. No authentication required."""
+    return {"status": "ok", "message": "Multi-Blockchain API is running"}
