@@ -1,6 +1,7 @@
 from datetime import timedelta
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.models.responses import (
     WalletInfoResponse,
@@ -17,14 +18,19 @@ from app.middlewares import (
     get_current_user, 
     User, 
     Token,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    get_cors_middleware
+    ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
 app = FastAPI(title="Multi‑Blockchain API", version="0.1.0")
 
 # Add CORS middleware
-app.add_middleware(get_cors_middleware())
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure this appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 tron_service = TronService()
 solana_service = SolanaService()
