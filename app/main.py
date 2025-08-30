@@ -11,16 +11,20 @@ from app.services.tron_service import TronService
 from app.services.solana_service import SolanaService
 from app.services.ethereum_service import EthereumService
 from app.services.bnb_service import BnbService
-from app.auth import (
+from app.middlewares import (
     authenticate_user, 
     create_access_token, 
     get_current_user, 
     User, 
     Token,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    get_cors_middleware
 )
 
 app = FastAPI(title="Multi‑Blockchain API", version="0.1.0")
+
+# Add CORS middleware
+app.add_middleware(get_cors_middleware())
 
 tron_service = TronService()
 solana_service = SolanaService()
