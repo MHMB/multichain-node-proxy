@@ -18,10 +18,14 @@ from app.middlewares import (
     get_current_user, 
     User, 
     Token,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    IPWhitelistMiddleware
 )
 
 app = FastAPI(title="Multi‑Blockchain API", version="0.1.0")
+
+# Add IP whitelist middleware
+app.add_middleware(IPWhitelistMiddleware)
 
 # Add CORS middleware
 app.add_middleware(

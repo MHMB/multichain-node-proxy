@@ -8,6 +8,7 @@ from .auth import (
 )
 
 from .cors import get_cors_middleware
+from .ip_whitelist import IPWhitelistMiddleware
 
 __all__ = [
     "authenticate_user",
@@ -16,5 +17,6 @@ __all__ = [
     "User",
     "Token",
     "ACCESS_TOKEN_EXPIRE_MINUTES",
-    "get_cors_middleware"
+    "get_cors_middleware",
+    "IPWhitelistMiddleware"
 ]
