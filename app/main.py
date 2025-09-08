@@ -95,6 +95,7 @@ async def transactions_list(
     wallet_address: str = Query(..., description="Wallet address to query"),
     blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
     limit: int = Query(20, description="Number of transactions to return"),
+    token: str = Query(None, description="Token contract address to filter transactions"),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -106,13 +107,13 @@ async def transactions_list(
     if limit < 1:
         limit = 1
     if chain == "tron":
-        return tron_service.get_transactions_list(wallet_address, limit)
+        return tron_service.get_transactions_list(wallet_address, limit, token)
     if chain == "solana":
-        return solana_service.get_transactions_list(wallet_address, limit)
+        return solana_service.get_transactions_list(wallet_address, limit, token)
     if chain == "ethereum":
-        return ethereum_service.get_transactions_list(wallet_address, limit)
+        return ethereum_service.get_transactions_list(wallet_address, limit, token)
     if chain == "bnb":
-        return bnb_service.get_transactions_list(wallet_address, limit)
+        return bnb_service.get_transactions_list(wallet_address, limit, token)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
 @app.get("/contract_details", response_model=ContractDetailsResponse)

@@ -168,123 +168,182 @@ class BnbService:
         
         return max(0.0, balance)  # Balance can't be negative
 
-    def get_transactions_list(self, wallet_address: str, limit: int = 20) -> TransactionsListResponse:
-        # Get BNB transactions
-        bnb_params = {
-            "module": "account",
-            "action": "txlist",
-            "address": wallet_address,
-            "startblock": 0,
-            "endblock": 99999999,
-            "page": 1,
-            "offset": limit,
-            "sort": "desc"
-        }
-        bnb_data = self._get(bnb_params)
-        
-        # Get BEP-20 token transactions
-        token_params = {
-            "module": "account",
-            "action": "tokentx",
-            "address": wallet_address,
-            "startblock": 0,
-            "endblock": 99999999,
-            "page": 1,
-            "offset": limit,
-            "sort": "desc"
-        }
-        token_data = self._get(token_params)
-        
+    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None) -> TransactionsListResponse:
         txs: List[Transaction] = []
         
-        # Process BNB transactions
-        if bnb_data and isinstance(bnb_data, list):
-            for tx in bnb_data:
-                timestamp = tx.get("timeStamp", "")
-                iso_time = ""
-                if timestamp:
+        if token:
+            # If token is specified, only get transactions for that specific token
+            token_params = {
+                "module": "account",
+                "action": "tokentx",
+                "contractaddress": token,
+                "address": wallet_address,
+                "startblock": 0,
+                "endblock": 99999999,
+                "page": 1,
+                "offset": limit,
+                "sort": "desc"
+            }
+            token_data = self._get(token_params)
+            
+            # Process token transactions only
+            if token_data and isinstance(token_data, list):
+                for tx in token_data:
+                    timestamp = tx.get("timeStamp", "")
+                    iso_time = ""
+                    if timestamp:
+                        try:
+                            iso_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(timestamp)))
+                        except Exception:
+                            iso_time = str(timestamp)
+                    
+                    amount_raw = tx.get("value", "0")
+                    decimals = int(tx.get("tokenDecimal", 18))
                     try:
-                        iso_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(timestamp)))
+                        amount_formatted = float(amount_raw) / (10 ** decimals)
                     except Exception:
-                        iso_time = str(timestamp)
-                
-                amount_wei = tx.get("value", "0")
-                try:
-                    amount_bnb = float(amount_wei) / 1e18
-                except Exception:
-                    amount_bnb = 0.0
-                
-                gas_price = tx.get("gasPrice", "0")
-                gas_used = tx.get("gasUsed", "0")
-                try:
-                    fee_wei = int(gas_price) * int(gas_used)
-                    fee_bnb = fee_wei / 1e18
-                except Exception:
-                    fee_bnb = 0.0
-                
-                transaction_data = {
-                    "hash": tx.get("hash", "") or "",
-                    "timestamp": iso_time or "",
-                    "from": tx.get("from", "") or "",  # Use alias name
-                    "to": tx.get("to", "") or "",
-                    "amount": str(amount_wei),
-                    "amount_formatted": str(amount_bnb),
-                    "token_symbol": "BNB",
-                    "transaction_fee": str(fee_wei),
-                    "transaction_fee_formatted": str(fee_bnb),
-                    "status": "success" if tx.get("isError") == "0" else "failed",
-                    "block_number": int(tx.get("blockNumber", 0)) or 0,
-                }
-                txs.append(Transaction(**transaction_data))
-        
-        # Process BEP-20 token transactions
-        if token_data and isinstance(token_data, list):
-            for tx in token_data:
-                timestamp = tx.get("timeStamp", "")
-                iso_time = ""
-                if timestamp:
+                        amount_formatted = 0.0
+                    
+                    gas_price = tx.get("gasPrice", "0")
+                    gas_used = tx.get("gasUsed", "0")
                     try:
-                        iso_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(timestamp)))
+                        fee_wei = int(gas_price) * int(gas_used)
+                        fee_bnb = fee_wei / 1e18
                     except Exception:
-                        iso_time = str(timestamp)
-                
-                amount_raw = tx.get("value", "0")
-                decimals = int(tx.get("tokenDecimal", 18))
-                try:
-                    amount_formatted = float(amount_raw) / (10 ** decimals)
-                except Exception:
-                    amount_formatted = 0.0
-                
-                # For token transfers, we need to estimate gas fee from the transaction
-                # This is a simplified approach
-                gas_price = tx.get("gasPrice", "0")
-                gas_used = tx.get("gasUsed", "0")
-                try:
-                    fee_wei = int(gas_price) * int(gas_used)
-                    fee_bnb = fee_wei / 1e18
-                except Exception:
-                    fee_bnb = 0.0
-                
-                symbol = tx.get("tokenSymbol", "TKN")
-                
-                transaction_data = {
-                    "hash": tx.get("hash", "") or "",
-                    "timestamp": iso_time or "",
-                    "from": tx.get("from", "") or "",  # Use alias name
-                    "to": tx.get("to", "") or "",
-                    "amount": str(amount_raw),
-                    "amount_formatted": str(amount_formatted),
-                    "token_symbol": str(symbol),
-                    "transaction_fee": str(fee_wei),
-                    "transaction_fee_formatted": str(fee_bnb),
-                    "status": "success",  # Token transfers are typically successful if they appear
-                    "block_number": int(tx.get("blockNumber", 0)) or 0,
-                }
-                txs.append(Transaction(**transaction_data))
-        
-        # Sort by timestamp and limit results
-        txs.sort(key=lambda t: t.timestamp, reverse=True)
-        txs = txs[:limit]
+                        fee_bnb = 0.0
+                    
+                    symbol = tx.get("tokenSymbol", "TKN")
+                    
+                    transaction_data = {
+                        "hash": tx.get("hash", "") or "",
+                        "timestamp": iso_time or "",
+                        "from": tx.get("from", "") or "",
+                        "to": tx.get("to", "") or "",
+                        "amount": str(amount_raw),
+                        "amount_formatted": str(amount_formatted),
+                        "token_symbol": str(symbol),
+                        "transaction_fee": str(fee_wei),
+                        "transaction_fee_formatted": str(fee_bnb),
+                        "status": "success",
+                        "block_number": int(tx.get("blockNumber", 0)) or 0,
+                    }
+                    txs.append(Transaction(**transaction_data))
+        else:
+            # Original logic when no token filter is applied
+            # Get BNB transactions
+            bnb_params = {
+                "module": "account",
+                "action": "txlist",
+                "address": wallet_address,
+                "startblock": 0,
+                "endblock": 99999999,
+                "page": 1,
+                "offset": limit,
+                "sort": "desc"
+            }
+            bnb_data = self._get(bnb_params)
+            
+            # Get BEP-20 token transactions
+            token_params = {
+                "module": "account",
+                "action": "tokentx",
+                "address": wallet_address,
+                "startblock": 0,
+                "endblock": 99999999,
+                "page": 1,
+                "offset": limit,
+                "sort": "desc"
+            }
+            token_data = self._get(token_params)
+            
+            # Process BNB transactions
+            if bnb_data and isinstance(bnb_data, list):
+                for tx in bnb_data:
+                    timestamp = tx.get("timeStamp", "")
+                    iso_time = ""
+                    if timestamp:
+                        try:
+                            iso_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(timestamp)))
+                        except Exception:
+                            iso_time = str(timestamp)
+                    
+                    amount_wei = tx.get("value", "0")
+                    try:
+                        amount_bnb = float(amount_wei) / 1e18
+                    except Exception:
+                        amount_bnb = 0.0
+                    
+                    gas_price = tx.get("gasPrice", "0")
+                    gas_used = tx.get("gasUsed", "0")
+                    try:
+                        fee_wei = int(gas_price) * int(gas_used)
+                        fee_bnb = fee_wei / 1e18
+                    except Exception:
+                        fee_bnb = 0.0
+                    
+                    transaction_data = {
+                        "hash": tx.get("hash", "") or "",
+                        "timestamp": iso_time or "",
+                        "from": tx.get("from", "") or "",  # Use alias name
+                        "to": tx.get("to", "") or "",
+                        "amount": str(amount_wei),
+                        "amount_formatted": str(amount_bnb),
+                        "token_symbol": "BNB",
+                        "transaction_fee": str(fee_wei),
+                        "transaction_fee_formatted": str(fee_bnb),
+                        "status": "success" if tx.get("isError") == "0" else "failed",
+                        "block_number": int(tx.get("blockNumber", 0)) or 0,
+                    }
+                    txs.append(Transaction(**transaction_data))
+            
+            # Process BEP-20 token transactions
+            if token_data and isinstance(token_data, list):
+                for tx in token_data:
+                    timestamp = tx.get("timeStamp", "")
+                    iso_time = ""
+                    if timestamp:
+                        try:
+                            iso_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(timestamp)))
+                        except Exception:
+                            iso_time = str(timestamp)
+                    
+                    amount_raw = tx.get("value", "0")
+                    decimals = int(tx.get("tokenDecimal", 18))
+                    try:
+                        amount_formatted = float(amount_raw) / (10 ** decimals)
+                    except Exception:
+                        amount_formatted = 0.0
+                    
+                    # For token transfers, we need to estimate gas fee from the transaction
+                    # This is a simplified approach
+                    gas_price = tx.get("gasPrice", "0")
+                    gas_used = tx.get("gasUsed", "0")
+                    try:
+                        fee_wei = int(gas_price) * int(gas_used)
+                        fee_bnb = fee_wei / 1e18
+                    except Exception:
+                        fee_bnb = 0.0
+                    
+                    symbol = tx.get("tokenSymbol", "TKN")
+                    
+                    transaction_data = {
+                        "hash": tx.get("hash", "") or "",
+                        "timestamp": iso_time or "",
+                        "from": tx.get("from", "") or "",  # Use alias name
+                        "to": tx.get("to", "") or "",
+                        "amount": str(amount_raw),
+                        "amount_formatted": str(amount_formatted),
+                        "token_symbol": str(symbol),
+                        "transaction_fee": str(fee_wei),
+                        "transaction_fee_formatted": str(fee_bnb),
+                        "status": "success",  # Token transfers are typically successful if they appear
+                        "block_number": int(tx.get("blockNumber", 0)) or 0,
+                    }
+                    txs.append(Transaction(**transaction_data))
+            
+            # Sort by timestamp and limit results
+            txs.sort(key=lambda t: t.timestamp, reverse=True)
+            txs = txs[:limit]
         
         # Get wallet info for balances
         wallet_info = self.get_wallet_info(wallet_address)
