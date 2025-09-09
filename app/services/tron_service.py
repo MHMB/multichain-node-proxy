@@ -85,115 +85,200 @@ class TronService:
             tokens=wallet_tokens,
         )
 
-    def get_transactions_list(self, wallet_address: str, limit: int = 20) -> TransactionsListResponse:
-        trx_params = {
-            "address": wallet_address,
-            "limit": limit,
-            "start": 0,
-            "direction": 0,
-            "reverse": True,
-            "db_version": 1,
-        }
-        trx_data = self._get("/api/transfer/trx", trx_params)
-
-        trc20_params = {
-            "address": wallet_address,
-            "limit": limit,
-            "start": 0,
-            "direction": 0,
-            "reverse": True,
-            "db_version": 1,
-        }
-        trc20_data = self._get("/api/transfer/trc20", trc20_params)
-
+    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None) -> TransactionsListResponse:
+        """
+        Get transaction history for a wallet. If token is specified, only returns transactions
+        for that specific TRC20 token contract. Otherwise, returns both TRX and TRC20 transactions.
+        
+        Args:
+            wallet_address: The wallet address to query
+            limit: Maximum number of transactions to return
+            token: Optional TRC20 token contract address to filter transactions
+            
+        Returns:
+            TransactionsListResponse with transaction history and wallet balances
+        """
         txs: List[Transaction] = []
-
-        if isinstance(trx_data, dict):
-            for tx in trx_data.get("data", []):
-                ts = tx.get("timestamp") or tx.get("block_timestamp")
-                try:
-                    iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts) / 1000)) if ts else ""
-                except Exception:
-                    iso = ""
-                amount_raw = tx.get("amount") or 0
-                try:
-                    amount_fmt = float(amount_raw) / 1e6
-                except Exception:
-                    amount_fmt = 0.0
-                fee = tx.get("energy_fee") or tx.get("fee") or 0
-                try:
-                    fee_fmt = float(fee) / 1e6
-                except Exception:
-                    fee_fmt = 0.0
-                from_addr = tx.get("from") or tx.get("ownerAddress") or ""
-                to_addr = tx.get("to") or tx.get("toAddress") or ""
-                txs.append(
-                    Transaction(
-                        hash=tx.get("hash", ""),
-                        timestamp=iso,
-                        from_=from_addr,
-                        to=to_addr,
-                        amount=str(amount_raw),
-                        amount_formatted=str(amount_fmt),
-                        token_symbol="TRX",
-                        transaction_fee=str(fee),
-                        transaction_fee_formatted=str(fee_fmt),
-                        status="success" if bool(tx.get("confirmed", 1)) else "failed",
-                        block_number=int(tx.get("block") or 0),
+        
+        # Validate parameters
+        if limit < 1:
+            limit = 1
+        elif limit > 100:  # Reasonable upper limit
+            limit = 100
+            
+        if token:
+            # If token is specified, only get transactions for that specific TRC20 token
+            # Using Tronscan API endpoint for TRC20 token transfers
+            trc20_token_params = {
+                "limit": limit,
+                "start": 0,
+                "contract_address": token,
+                "relatedAddress": wallet_address,
+                "confirm": True,
+            }
+            trc20_token_data = self._get("/api/token_trc20/transfers", trc20_token_params)
+            
+            # Process token transactions only
+            if isinstance(trc20_token_data, dict) and trc20_token_data.get("data"):
+                for tx in trc20_token_data.get("data", []):
+                    if not isinstance(tx, dict):
+                        continue
+                    ts = tx.get("timestamp") or tx.get("block_timestamp")
+                    try:
+                        iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts) / 1000)) if ts else ""
+                    except Exception:
+                        iso = ""
+                    amount_raw = tx.get("amount") or 0
+                    decimals = 0
+                    if "decimals" in tx and tx.get("decimals") is not None:
+                        decimals = int(tx.get("decimals"))
+                    token_info = tx.get("tokenInfo") or {}
+                    decimals = int(token_info.get("tokenDecimal") or token_info.get("decimals") or decimals)
+                    try:
+                        amount_fmt = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                    except Exception:
+                        amount_fmt = 0.0
+                    fee = tx.get("energy_fee") or tx.get("fee") or 0
+                    try:
+                        fee_fmt = float(fee) / 1e6
+                    except Exception:
+                        fee_fmt = 0.0
+                    from_addr = tx.get("from") or tx.get("ownerAddress") or ""
+                    to_addr = tx.get("to") or tx.get("toAddress") or ""
+                    symbol = (
+                        token_info.get("tokenAbbr")
+                        or token_info.get("symbol")
+                        or tx.get("symbol")
+                        or token_info.get("tokenName")
+                        or tx.get("token_name")
+                        or "TKN"
                     )
-                )
-
-        if isinstance(trc20_data, dict):
-            for tx in trc20_data.get("data", []):
-                ts = tx.get("timestamp") or tx.get("block_timestamp")
-                try:
-                    iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts) / 1000)) if ts else ""
-                except Exception:
-                    iso = ""
-                amount_raw = tx.get("amount") or 0
-                decimals = 0
-                if "decimals" in tx and tx.get("decimals") is not None:
-                    decimals = int(tx.get("decimals"))
-                token_info = tx.get("tokenInfo") or {}
-                decimals = int(token_info.get("tokenDecimal") or token_info.get("decimals") or decimals)
-                try:
-                    amount_fmt = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
-                except Exception:
-                    amount_fmt = 0.0
-                fee = tx.get("energy_fee") or tx.get("fee") or 0
-                try:
-                    fee_fmt = float(fee) / 1e6
-                except Exception:
-                    fee_fmt = 0.0
-                from_addr = tx.get("from") or tx.get("ownerAddress") or ""
-                to_addr = tx.get("to") or tx.get("toAddress") or ""
-                symbol = (
-                    token_info.get("tokenAbbr")
-                    or token_info.get("symbol")
-                    or tx.get("symbol")
-                    or token_info.get("tokenName")
-                    or tx.get("token_name")
-                    or "TKN"
-                )
-                txs.append(
-                    Transaction(
-                        hash=tx.get("hash", ""),
-                        timestamp=iso,
-                        from_=from_addr,
-                        to=to_addr,
-                        amount=str(amount_raw),
-                        amount_formatted=str(amount_fmt),
-                        token_symbol=str(symbol),
-                        transaction_fee=str(fee),
-                        transaction_fee_formatted=str(fee_fmt),
-                        status="success" if bool(tx.get("confirmed", 1)) else "failed",
-                        block_number=int(tx.get("block") or 0),
+                    txs.append(
+                        Transaction(
+                            hash=tx.get("hash", ""),
+                            timestamp=iso,
+                            from_=from_addr,
+                            to=to_addr,
+                            amount=str(amount_raw),
+                            amount_formatted=str(amount_fmt),
+                            token_symbol=str(symbol),
+                            transaction_fee=str(fee),
+                            transaction_fee_formatted=str(fee_fmt),
+                            status="success" if bool(tx.get("confirmed", 1)) else "failed",
+                            block_number=int(tx.get("block") or 0),
+                        )
                     )
-                )
+            # Note: If no token transactions are found, txs list will be empty
+        else:
+            # Original logic when no token filter is applied
+            trx_params = {
+                "address": wallet_address,
+                "limit": limit,
+                "start": 0,
+                "direction": 0,
+                "reverse": True,
+                "db_version": 1,
+            }
+            trx_data = self._get("/api/transfer/trx", trx_params)
 
-        txs.sort(key=lambda t: t.timestamp, reverse=True)
-        txs = txs[:limit]
+            trc20_params = {
+                "address": wallet_address,
+                "limit": limit,
+                "start": 0,
+                "direction": 0,
+                "reverse": True,
+                "db_version": 1,
+            }
+            trc20_data = self._get("/api/transfer/trc20", trc20_params)
 
+            if isinstance(trx_data, dict):
+                for tx in trx_data.get("data", []):
+                    ts = tx.get("timestamp") or tx.get("block_timestamp")
+                    try:
+                        iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts) / 1000)) if ts else ""
+                    except Exception:
+                        iso = ""
+                    amount_raw = tx.get("amount") or 0
+                    try:
+                        amount_fmt = float(amount_raw) / 1e6
+                    except Exception:
+                        amount_fmt = 0.0
+                    fee = tx.get("energy_fee") or tx.get("fee") or 0
+                    try:
+                        fee_fmt = float(fee) / 1e6
+                    except Exception:
+                        fee_fmt = 0.0
+                    from_addr = tx.get("from") or tx.get("ownerAddress") or ""
+                    to_addr = tx.get("to") or tx.get("toAddress") or ""
+                    txs.append(
+                        Transaction(
+                            hash=tx.get("hash", ""),
+                            timestamp=iso,
+                            from_=from_addr,
+                            to=to_addr,
+                            amount=str(amount_raw),
+                            amount_formatted=str(amount_fmt),
+                            token_symbol="TRX",
+                            transaction_fee=str(fee),
+                            transaction_fee_formatted=str(fee_fmt),
+                            status="success" if bool(tx.get("confirmed", 1)) else "failed",
+                            block_number=int(tx.get("block") or 0),
+                        )
+                    )
+
+            if isinstance(trc20_data, dict):
+                for tx in trc20_data.get("data", []):
+                    ts = tx.get("timestamp") or tx.get("block_timestamp")
+                    try:
+                        iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts) / 1000)) if ts else ""
+                    except Exception:
+                        iso = ""
+                    amount_raw = tx.get("amount") or 0
+                    decimals = 0
+                    if "decimals" in tx and tx.get("decimals") is not None:
+                        decimals = int(tx.get("decimals"))
+                    token_info = tx.get("tokenInfo") or {}
+                    decimals = int(token_info.get("tokenDecimal") or token_info.get("decimals") or decimals)
+                    try:
+                        amount_fmt = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                    except Exception:
+                        amount_fmt = 0.0
+                    fee = tx.get("energy_fee") or tx.get("fee") or 0
+                    try:
+                        fee_fmt = float(fee) / 1e6
+                    except Exception:
+                        fee_fmt = 0.0
+                    from_addr = tx.get("from") or tx.get("ownerAddress") or ""
+                    to_addr = tx.get("to") or tx.get("toAddress") or ""
+                    symbol = (
+                        token_info.get("tokenAbbr")
+                        or token_info.get("symbol")
+                        or tx.get("symbol")
+                        or token_info.get("tokenName")
+                        or tx.get("token_name")
+                        or "TKN"
+                    )
+                    txs.append(
+                        Transaction(
+                            hash=tx.get("hash", ""),
+                            timestamp=iso,
+                            from_=from_addr,
+                            to=to_addr,
+                            amount=str(amount_raw),
+                            amount_formatted=str(amount_fmt),
+                            token_symbol=str(symbol),
+                            transaction_fee=str(fee),
+                            transaction_fee_formatted=str(fee_fmt),
+                            status="success" if bool(tx.get("confirmed", 1)) else "failed",
+                            block_number=int(tx.get("block") or 0),
+                        )
+                    )
+
+            # Sort by timestamp and limit results
+            txs.sort(key=lambda t: t.timestamp, reverse=True)
+            txs = txs[:limit]
+
+        # Get wallet info for balances
         wallet_info = self.get_wallet_info(wallet_address)
         native_symbol = wallet_info.native_token.symbol
         native_balance_formatted = format(wallet_info.native_token.balance, "f")
