@@ -108,54 +108,103 @@ class TronService:
             
         if token:
             # If token is specified, only get transactions for that specific TRC20 token
-            # Using Tronscan API endpoint for TRC20 token transfers
+            # Use the corrected TRC20 transfers endpoint with proper parameters
             trc20_token_params = {
                 "limit": limit,
                 "start": 0,
-                "contract_address": token,
-                "relatedAddress": wallet_address,
-                "confirm": True,
+                "contract_address": token,  # This filters by specific token contract
+                "relatedAddress": wallet_address,  # This filters by wallet address
+                "confirm": "true",  # Only confirmed transactions
+                "filterTokenValue": "1"  # Filter out zero-value transfers
             }
+            
+            # Try the TRC20 transfers endpoint
             trc20_token_data = self._get("/api/token_trc20/transfers", trc20_token_params)
             
-            # Process token transactions only
-            if isinstance(trc20_token_data, dict) and trc20_token_data.get("data"):
-                for tx in trc20_token_data.get("data", []):
+            # Process token transactions
+            if isinstance(trc20_token_data, dict):
+                # Check if we have token_transfers in the response
+                token_transfers = trc20_token_data.get("token_transfers", [])
+                
+                # If token_transfers is empty, try the data field (alternative response format)
+                if not token_transfers:
+                    token_transfers = trc20_token_data.get("data", [])
+                
+                for tx in token_transfers:
                     if not isinstance(tx, dict):
                         continue
+                    
+                    # Extract timestamp
                     ts = tx.get("timestamp") or tx.get("block_timestamp")
-                    try:
-                        iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(ts) / 1000)) if ts else ""
-                    except Exception:
-                        iso = ""
-                    amount_raw = tx.get("amount") or 0
+                    iso = ""
+                    if ts:
+                        try:
+                            # Handle both timestamp formats (seconds and milliseconds)
+                            timestamp_val = int(ts)
+                            if timestamp_val > 1e12:  # Milliseconds
+                                timestamp_val = timestamp_val / 1000
+                            iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp_val))
+                        except Exception:
+                            iso = ""
+                    
+                    # Extract amount and decimals
+                    amount_raw = tx.get("amount") or tx.get("value") or 0
                     decimals = 0
+                    
+                    # Get decimals from multiple possible sources
                     if "decimals" in tx and tx.get("decimals") is not None:
                         decimals = int(tx.get("decimals"))
+                    
                     token_info = tx.get("tokenInfo") or {}
-                    decimals = int(token_info.get("tokenDecimal") or token_info.get("decimals") or decimals)
+                    if not decimals and token_info:
+                        decimals = int(token_info.get("tokenDecimal") or token_info.get("decimals") or 0)
+                    
+                    # If still no decimals found, try to get from token name (USDT typically has 6 decimals)
+                    if not decimals:
+                        symbol = (token_info.get("tokenAbbr") or token_info.get("symbol") or 
+                                tx.get("symbol") or "").upper()
+                        if symbol in ["USDT", "JUSDT"]:
+                            decimals = 6
+                        else:
+                            decimals = 6  # Default for most TRC20 tokens on TRON
+                    
+                    # Format amount
                     try:
-                        amount_fmt = float(amount_raw) / (10 ** decimals) if decimals else float(amount_raw)
+                        amount_fmt = float(amount_raw) / (10 ** decimals) if decimals > 0 else float(amount_raw)
                     except Exception:
                         amount_fmt = 0.0
-                    fee = tx.get("energy_fee") or tx.get("fee") or 0
+                    
+                    # Extract fee information
+                    fee = tx.get("energy_fee") or tx.get("fee") or tx.get("cost") or 0
                     try:
-                        fee_fmt = float(fee) / 1e6
+                        fee_fmt = float(fee) / 1e6  # TRX fees are in SUN (1 TRX = 1e6 SUN)
                     except Exception:
                         fee_fmt = 0.0
-                    from_addr = tx.get("from") or tx.get("ownerAddress") or ""
-                    to_addr = tx.get("to") or tx.get("toAddress") or ""
+                    
+                    # Extract addresses
+                    from_addr = tx.get("from") or tx.get("from_address") or tx.get("ownerAddress") or ""
+                    to_addr = tx.get("to") or tx.get("to_address") or tx.get("toAddress") or ""
+                    
+                    # Extract symbol
                     symbol = (
-                        token_info.get("tokenAbbr")
-                        or token_info.get("symbol")
-                        or tx.get("symbol")
-                        or token_info.get("tokenName")
-                        or tx.get("token_name")
-                        or "TKN"
+                        token_info.get("tokenAbbr") or
+                        token_info.get("symbol") or
+                        tx.get("symbol") or
+                        token_info.get("tokenName") or
+                        tx.get("token_name") or
+                        "TRC20"
                     )
+                    
+                    # Determine transaction status
+                    status = "success"
+                    if "confirmed" in tx:
+                        status = "success" if bool(tx.get("confirmed", 1)) else "failed"
+                    elif "status" in tx:
+                        status = "success" if tx.get("status") in [1, "1", "SUCCESS", True] else "failed"
+                    
                     txs.append(
                         Transaction(
-                            hash=tx.get("hash", ""),
+                            hash=tx.get("hash", "") or tx.get("transaction_id", ""),
                             timestamp=iso,
                             from_=from_addr,
                             to=to_addr,
@@ -164,11 +213,78 @@ class TronService:
                             token_symbol=str(symbol),
                             transaction_fee=str(fee),
                             transaction_fee_formatted=str(fee_fmt),
-                            status="success" if bool(tx.get("confirmed", 1)) else "failed",
-                            block_number=int(tx.get("block") or 0),
+                            status=status,
+                            block_number=int(tx.get("block") or tx.get("blockNumber") or 0),
                         )
                     )
-            # Note: If no token transactions are found, txs list will be empty
+            
+            # If no transactions found with the above method, try alternative endpoint
+            if not txs:
+                # Try the alternative endpoint used in your curl command
+                alt_params = {
+                    "trc20Id": token,
+                    "address": wallet_address,
+                    "limit": limit,
+                    "start": 0,
+                    "direction": 0,  # 0: all, 1: out, 2: in
+                    "db_version": 1,
+                    "reverse": "true"
+                }
+                
+                alt_data = self._get("/api/token_trc20/transfers-with-status", alt_params)
+                
+                if isinstance(alt_data, dict):
+                    token_transfers = alt_data.get("data", [])
+                    
+                    for tx in token_transfers:
+                        if not isinstance(tx, dict):
+                            continue
+                        
+                        ts = tx.get("timestamp") or tx.get("block_timestamp")
+                        iso = ""
+                        if ts:
+                            try:
+                                timestamp_val = int(ts)
+                                if timestamp_val > 1e12:
+                                    timestamp_val = timestamp_val / 1000
+                                iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp_val))
+                            except Exception:
+                                iso = ""
+                        
+                        amount_raw = tx.get("amount") or tx.get("value") or 0
+                        decimals = int(tx.get("decimals") or 6)  # Default to 6 for TRON
+                        
+                        try:
+                            amount_fmt = float(amount_raw) / (10 ** decimals)
+                        except Exception:
+                            amount_fmt = 0.0
+                        
+                        fee = tx.get("energy_fee") or tx.get("fee") or 0
+                        try:
+                            fee_fmt = float(fee) / 1e6
+                        except Exception:
+                            fee_fmt = 0.0
+                        
+                        from_addr = tx.get("from") or tx.get("ownerAddress") or ""
+                        to_addr = tx.get("to") or tx.get("toAddress") or ""
+                        symbol = tx.get("symbol") or tx.get("tokenAbbr") or "TRC20"
+                        
+                        txs.append(
+                            Transaction(
+                                hash=tx.get("hash", "") or tx.get("transaction_id", ""),
+                                timestamp=iso,
+                                from_=from_addr,
+                                to=to_addr,
+                                amount=str(amount_raw),
+                                amount_formatted=str(amount_fmt),
+                                token_symbol=str(symbol),
+                                transaction_fee=str(fee),
+                                transaction_fee_formatted=str(fee_fmt),
+                                status="success" if bool(tx.get("confirmed", 1)) else "failed",
+                                block_number=int(tx.get("block") or 0),
+                            )
+                        )
+            
         else:
             # Original logic when no token filter is applied
             trx_params = {
