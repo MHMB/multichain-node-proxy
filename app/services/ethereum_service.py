@@ -176,7 +176,7 @@ class EthereumService:
             token_params = {
                 "module": "account",
                 "action": "tokentx",
-                "contractaddress": token,
+                "contractaddress": token,  # This is the key fix - filtering by contract address
                 "address": wallet_address,
                 "startblock": 0,
                 "endblock": 99999999,
@@ -280,10 +280,11 @@ class EthereumService:
                         fee_eth = fee_wei / 1e18
                     except Exception:
                         fee_eth = 0.0
+                        
                     transaction_data = {
                         "hash": tx.get("hash", "") or "",
                         "timestamp": iso_time or "",
-                        "from": tx.get("from", "") or "",  # Use alias name
+                        "from": tx.get("from", "") or "",
                         "to": tx.get("to", "") or "",
                         "amount": str(amount_wei),
                         "amount_formatted": str(amount_eth),
@@ -313,8 +314,6 @@ class EthereumService:
                     except Exception:
                         amount_formatted = 0.0
                     
-                    # For token transfers, we need to estimate gas fee from the transaction
-                    # This is a simplified approach
                     gas_price = tx.get("gasPrice", "0")
                     gas_used = tx.get("gasUsed", "0")
                     try:
@@ -328,14 +327,14 @@ class EthereumService:
                     transaction_data = {
                         "hash": tx.get("hash", "") or "",
                         "timestamp": iso_time or "",
-                        "from": tx.get("from", "") or "",  # Use alias name
+                        "from": tx.get("from", "") or "",
                         "to": tx.get("to", "") or "",
                         "amount": str(amount_raw),
                         "amount_formatted": str(amount_formatted),
                         "token_symbol": str(symbol),
                         "transaction_fee": str(fee_wei),
                         "transaction_fee_formatted": str(fee_eth),
-                        "status": "success",  # Token transfers are typically successful if they appear
+                        "status": "success",
                         "block_number": int(tx.get("blockNumber", 0)) or 0,
                     }
                     txs.append(Transaction(**transaction_data))
