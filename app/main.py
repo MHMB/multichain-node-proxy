@@ -13,19 +13,46 @@ from app.services.solana_service import SolanaService
 from app.services.ethereum_service import EthereumService
 from app.services.bnb_service import BnbService
 from app.middlewares import (
-    authenticate_user, 
-    create_access_token, 
-    get_current_user, 
-    User, 
+    authenticate_user,
+    create_access_token,
+    get_current_user,
+    User,
     Token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    IPWhitelistMiddleware
+    IPWhitelistMiddleware,
+    RequestLoggingMiddleware
 )
+from app.database import db_manager
+from app.config import Config
 
 app = FastAPI(title="Multi‑Blockchain API", version="0.1.0")
 
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup."""
+    config = Config()
+    db_manager.initialize(config.DATABASE_URL)
+    await db_manager.create_tables()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up database connections on shutdown."""
+    await db_manager.close()
+
+
+# Add request logging middleware
+config = Config()
+app.add_middleware(
+    RequestLoggingMiddleware,
+    log_requests=config.LOG_REQUESTS,
+    log_response_body=config.LOG_RESPONSE_BODY,
+    log_request_headers=config.LOG_REQUEST_HEADERS
+)
+
 # Add IP whitelist middleware
-app.add_middleware(IPWhitelistMiddleware)
+# app.add_middleware(IPWhitelistMiddleware)
 
 # Add CORS middleware
 app.add_middleware(

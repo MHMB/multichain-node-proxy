@@ -1,7 +1,7 @@
 import os
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse
 
 
 class IPWhitelistMiddleware(BaseHTTPMiddleware):
@@ -33,9 +33,9 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
         
         # Check if IP is allowed
         if client_ip not in self.allowed_ips:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=403,
-                detail="Access denied: IP address not allowed"
+                content={"detail": "Access denied: IP address not allowed"}
             )
         
         return await call_next(request)

@@ -21,3 +21,11 @@ class Config:
     
     # IP Whitelist Configuration
     ALLOWED_IPS: str = os.getenv("ALLOWED_IPS", "")
+
+    # Database Configuration
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/multichain_proxy")
+
+    # Logging Configuration
+    LOG_REQUESTS: bool = os.getenv("LOG_REQUESTS", "true").lower() == "true"
+    LOG_RESPONSE_BODY: bool = os.getenv("LOG_RESPONSE_BODY", "true").lower() == "true"
+    LOG_REQUEST_HEADERS: bool = os.getenv("LOG_REQUEST_HEADERS", "false").lower() == "true"
