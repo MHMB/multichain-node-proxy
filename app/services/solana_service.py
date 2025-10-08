@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -33,6 +34,7 @@ class SolanaService:
         self._owner_cache: Dict[str, Optional[str]] = {}
         self._token_metadata_cache: Dict[str, Tuple[str, str]] = {}
         self._token_accounts_cache: Dict[str, List[str]] = {}
+        self._slot_time_cache: Dict[int, Optional[int]] = {}  # Cache for slot -> timestamp mappings
 
     def _post(self, method: str, params: List[Any]) -> Optional[Dict[str, Any]]:
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
@@ -167,6 +169,230 @@ class SolanaService:
         self._token_metadata_cache[mint] = result
         return result
 
+    def _get_current_slot(self) -> Optional[int]:
+        """Get the current slot number from the blockchain."""
+        result = self._post("getSlot", [])
+        if result is not None:
+            try:
+                return int(result)
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    def _get_block_time(self, slot: int) -> Optional[int]:
+        """
+        Get Unix timestamp for a given slot number.
+        Uses caching to reduce API calls.
+
+        Args:
+            slot: Slot number to query
+
+        Returns:
+            Unix timestamp in seconds, or None if slot doesn't exist
+        """
+        # Check cache first
+        if slot in self._slot_time_cache:
+            return self._slot_time_cache[slot]
+
+        result = self._post("getBlockTime", [slot])
+        timestamp = None
+        if result is not None:
+            try:
+                timestamp = int(result)
+            except (ValueError, TypeError):
+                pass
+
+        # Cache the result (including None to avoid repeated failed lookups)
+        self._slot_time_cache[slot] = timestamp
+        return timestamp
+
+    def _find_slot_by_timestamp_binary_search(
+        self,
+        target_timestamp: int,
+        low_slot: int,
+        high_slot: int,
+        find_after: bool = True
+    ) -> int:
+        """
+        Binary search to find slot closest to target timestamp.
+
+        Args:
+            target_timestamp: Unix timestamp to search for
+            low_slot: Starting slot (older)
+            high_slot: Ending slot (newer)
+            find_after: If True, find first slot AFTER timestamp
+                       If False, find last slot BEFORE timestamp
+
+        Returns:
+            Slot number closest to the target timestamp
+        """
+        original_low = low_slot
+        original_high = high_slot
+
+        # Binary search for the target slot
+        while low_slot < high_slot:
+            mid_slot = (low_slot + high_slot) // 2
+            mid_time = self._get_block_time(mid_slot)
+
+            # If we can't get the time for this slot, try nearby slots
+            if mid_time is None:
+                # Try next slot
+                mid_time = self._get_block_time(mid_slot + 1)
+                if mid_time is None:
+                    # Try previous slot
+                    mid_time = self._get_block_time(mid_slot - 1)
+                    if mid_time is None:
+                        # Skip this range
+                        if find_after:
+                            low_slot = mid_slot + 1
+                        else:
+                            high_slot = mid_slot - 1
+                        continue
+                    else:
+                        mid_slot = mid_slot - 1
+                else:
+                    mid_slot = mid_slot + 1
+
+            if mid_time < target_timestamp:
+                low_slot = mid_slot + 1
+            elif mid_time > target_timestamp:
+                high_slot = mid_slot
+            else:
+                # Exact match
+                return mid_slot
+
+        # Return the appropriate boundary
+        if find_after:
+            return low_slot if low_slot <= original_high else original_high
+        else:
+            return high_slot if high_slot >= original_low else original_low
+
+    # ALTERNATIVE APPROACH 2: Approximate Estimation (Commented Out)
+    # This approach is faster but less accurate than binary search
+    # def _find_slot_by_timestamp_estimation(
+    #     self,
+    #     target_timestamp: int,
+    #     current_slot: int,
+    #     current_time: int,
+    #     buffer_slots: int = 5000
+    # ) -> int:
+    #     """
+    #     Estimate slot from timestamp using average slot time.
+    #
+    #     Args:
+    #         target_timestamp: Unix timestamp to estimate slot for
+    #         current_slot: Current blockchain slot
+    #         current_time: Current Unix timestamp
+    #         buffer_slots: Safety buffer to add/subtract
+    #
+    #     Returns:
+    #         Estimated slot number with buffer
+    #
+    #     Note:
+    #         Solana slots are approximately 0.4 seconds each (400ms)
+    #         This is an estimate and may drift due to network conditions
+    #     """
+    #     SLOT_TIME_SECONDS = 0.4  # Average time per slot
+    #
+    #     # Calculate time difference
+    #     time_diff = current_time - target_timestamp
+    #
+    #     # Estimate slots back from current
+    #     slots_diff = int(time_diff / SLOT_TIME_SECONDS)
+    #
+    #     # Calculate estimated slot with buffer
+    #     estimated_slot = current_slot - slots_diff
+    #
+    #     # Add buffer for safety (to avoid missing transactions at boundaries)
+    #     estimated_slot = max(0, estimated_slot - buffer_slots)
+    #
+    #     return estimated_slot
+
+    def _convert_dates_to_slots(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """
+        Convert date strings to slot numbers using binary search.
+
+        Args:
+            start_date: Start date in ISO format (YYYY-MM-DD) or datetime string
+            end_date: End date in ISO format (YYYY-MM-DD) or datetime string
+
+        Returns:
+            Tuple of (start_slot, end_slot), or (None, None) if dates not provided
+        """
+        if not start_date and not end_date:
+            return None, None
+
+        # Get current slot for reference
+        current_slot = self._get_current_slot()
+        if current_slot is None:
+            print("Error: Could not get current slot")
+            return None, None
+
+        # Get current time
+        current_time = int(time.time())
+
+        start_slot = None
+        end_slot = None
+
+        # Estimate initial search range (approximately 216,000 slots per day)
+        SLOTS_PER_DAY = 216000
+
+        if start_date:
+            try:
+                # Parse date string to datetime
+                dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                start_timestamp = int(dt.timestamp())
+
+                # Estimate how many days back
+                days_back = (current_time - start_timestamp) / 86400
+                estimated_slots_back = int(days_back * SLOTS_PER_DAY)
+
+                # Set search range (with buffer)
+                low_slot = max(0, current_slot - estimated_slots_back - 50000)
+                high_slot = min(current_slot, current_slot - estimated_slots_back + 50000)
+
+                # Binary search for precise slot
+                start_slot = self._find_slot_by_timestamp_binary_search(
+                    start_timestamp,
+                    low_slot,
+                    high_slot,
+                    find_after=True
+                )
+
+            except Exception as e:
+                print(f"Error parsing start_date: {e}")
+
+        if end_date:
+            try:
+                # Parse date string to datetime
+                dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                end_timestamp = int(dt.timestamp())
+
+                # Estimate how many days back
+                days_back = (current_time - end_timestamp) / 86400
+                estimated_slots_back = int(days_back * SLOTS_PER_DAY)
+
+                # Set search range (with buffer)
+                low_slot = max(0, current_slot - estimated_slots_back - 50000)
+                high_slot = min(current_slot, current_slot - estimated_slots_back + 50000)
+
+                # Binary search for precise slot
+                end_slot = self._find_slot_by_timestamp_binary_search(
+                    end_timestamp,
+                    low_slot,
+                    high_slot,
+                    find_after=False
+                )
+
+            except Exception as e:
+                print(f"Error parsing end_date: {e}")
+
+        return start_slot, end_slot
+
     def get_wallet_info(self, wallet_address: str) -> WalletInfoResponse:
         native_balance = 0.0
         account_info = self._post("getAccountInfo", [wallet_address, {"encoding": "jsonParsed"}])
@@ -218,7 +444,7 @@ class SolanaService:
             tokens=tokens,
         )
 
-    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None) -> TransactionsListResponse:
+    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None) -> TransactionsListResponse:
         """Get transaction history for a wallet. If token is specified, only returns transactions
         for that specific SPL token mint. Otherwise, returns both SOL and SPL token transactions.
 
@@ -226,33 +452,93 @@ class SolanaService:
             wallet_address: The wallet address to query
             limit: Maximum number of transactions to return
             token: Optional SPL token mint address to filter transactions
+            start_date: Start date filter in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+            end_date: End date filter in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
 
         Returns:
             TransactionsListResponse with transaction history and wallet balances
-        """
-        if token:
-            return self._get_token_specific_transactions(wallet_address, token, limit)
-        else:
-            return self._get_all_transactions(wallet_address, limit)
 
-    def _get_all_transactions(self, wallet_address: str, limit: int) -> TransactionsListResponse:
-        """Get all transactions (SOL and SPL tokens) for a wallet."""
+        Note:
+            Date filtering uses binary search to find approximate slots for the date range.
+        """
+        # Convert dates to slots if provided
+        start_slot, end_slot = self._convert_dates_to_slots(start_date, end_date)
+
+        if token:
+            return self._get_token_specific_transactions(wallet_address, token, limit, start_slot, end_slot, start_date, end_date)
+        else:
+            return self._get_all_transactions(wallet_address, limit, start_slot, end_slot, start_date, end_date)
+
+    def _get_all_transactions(
+        self,
+        wallet_address: str,
+        limit: int,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> TransactionsListResponse:
+        """
+        Get all transactions (SOL and SPL tokens) for a wallet.
+
+        Args:
+            wallet_address: Wallet address to query
+            limit: Maximum number of transactions
+            start_slot: Starting slot for filtering (optional)
+            end_slot: Ending slot for filtering (optional)
+            start_date: Start date for timestamp filtering (optional)
+            end_date: End date for timestamp filtering (optional)
+        """
         transactions: List[Transaction] = []
-        signatures_result = self._post("getSignaturesForAddress", [wallet_address, {"limit": limit}])
+
+        # Parse dates to timestamps for client-side filtering
+        start_timestamp = None
+        end_timestamp = None
+        if start_date:
+            try:
+                dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                start_timestamp = int(dt.timestamp())
+            except Exception:
+                pass
+        if end_date:
+            try:
+                dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                end_timestamp = int(dt.timestamp())
+            except Exception:
+                pass
+
+        # Build query parameters
+        query_params: Dict[str, Any] = {"limit": min(limit * 3, 1000)}  # Fetch more to account for filtering
+
+        # Note: getSignaturesForAddress doesn't support direct slot filtering
+        # We'll fetch signatures and filter client-side
+        signatures_result = self._post("getSignaturesForAddress", [wallet_address, query_params])
         signature_list: List[str] = []
         if signatures_result and isinstance(signatures_result, list):
             for sig in signatures_result:
                 signature_list.append(sig.get("signature"))
         for sig in signature_list:
+            # Stop if we have enough transactions
+            if len(transactions) >= limit:
+                break
+
             tx_data = self._post(
                 "getTransaction",
                 [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
             )
             if not tx_data or not isinstance(tx_data, dict):
                 continue
+
             meta = tx_data.get("meta", {}) or {}
             transaction = tx_data.get("transaction", {}) or {}
             block_time = tx_data.get("blockTime") or 0
+
+            # Client-side timestamp filtering
+            if start_timestamp and block_time < start_timestamp:
+                continue
+            if end_timestamp and block_time > end_timestamp:
+                continue
+
             try:
                 iso_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(block_time)))
             except Exception:
@@ -311,9 +597,45 @@ class SolanaService:
             )
         return self._build_transactions_response(wallet_address, transactions)
 
-    def _get_token_specific_transactions(self, wallet_address: str, token_mint: str, limit: int) -> TransactionsListResponse:
-        """Get transactions for a specific SPL token mint address."""
+    def _get_token_specific_transactions(
+        self,
+        wallet_address: str,
+        token_mint: str,
+        limit: int,
+        start_slot: Optional[int] = None,
+        end_slot: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> TransactionsListResponse:
+        """
+        Get transactions for a specific SPL token mint address.
+
+        Args:
+            wallet_address: Wallet address to query
+            token_mint: SPL token mint address
+            limit: Maximum number of transactions
+            start_slot: Starting slot for filtering (optional)
+            end_slot: Ending slot for filtering (optional)
+            start_date: Start date for timestamp filtering (optional)
+            end_date: End date for timestamp filtering (optional)
+        """
         transactions: List[Transaction] = []
+
+        # Parse dates to timestamps for client-side filtering
+        start_timestamp = None
+        end_timestamp = None
+        if start_date:
+            try:
+                dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                start_timestamp = int(dt.timestamp())
+            except Exception:
+                pass
+        if end_date:
+            try:
+                dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                end_timestamp = int(dt.timestamp())
+            except Exception:
+                pass
 
         # Get token accounts for this specific mint
         token_accounts = self._get_token_accounts_for_mint(wallet_address, token_mint)
@@ -323,22 +645,31 @@ class SolanaService:
 
         # Collect signatures from all token accounts
         all_signatures: List[Dict[str, Any]] = []
+        query_limit = min(limit * 3, 1000)  # Fetch more to account for filtering
         for token_account in token_accounts:
             signatures_result = self._post(
                 "getSignaturesForAddress",
-                [token_account, {"limit": limit}]
+                [token_account, {"limit": query_limit}]
             )
             if signatures_result and isinstance(signatures_result, list):
                 all_signatures.extend(signatures_result)
 
-        # Remove duplicates and sort by block time
+        # Remove duplicates and filter by timestamp
         unique_signatures = {}
         for sig_info in all_signatures:
             sig = sig_info.get("signature")
+            block_time = sig_info.get("blockTime", 0)
+
+            # Filter by timestamp if provided
+            if start_timestamp and block_time < start_timestamp:
+                continue
+            if end_timestamp and block_time > end_timestamp:
+                continue
+
             if sig and sig not in unique_signatures:
                 unique_signatures[sig] = sig_info
 
-        # Sort by block time (most recent first)
+        # Sort by block time (most recent first) and limit
         sorted_signatures = sorted(
             unique_signatures.values(),
             key=lambda x: x.get("blockTime", 0),
@@ -578,13 +909,15 @@ class SolanaService:
         self._owner_cache.clear()
         self._token_metadata_cache.clear()
         self._token_accounts_cache.clear()
+        self._slot_time_cache.clear()
 
     def get_cache_stats(self) -> Dict[str, int]:
         """Get cache statistics for monitoring performance."""
         return {
             "owner_cache_size": len(self._owner_cache),
             "token_metadata_cache_size": len(self._token_metadata_cache),
-            "token_accounts_cache_size": len(self._token_accounts_cache)
+            "token_accounts_cache_size": len(self._token_accounts_cache),
+            "slot_time_cache_size": len(self._slot_time_cache)
         }
 
     def _build_transactions_response(self, wallet_address: str, transactions: List[Transaction]) -> TransactionsListResponse:
