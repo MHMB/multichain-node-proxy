@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 import requests
@@ -31,6 +32,28 @@ class TronService:
         except Exception:
             return None
         return None
+
+    def _date_to_milliseconds(self, date_str: str) -> Optional[int]:
+        """
+        Convert ISO date string to millisecond timestamp.
+
+        Args:
+            date_str: Date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+
+        Returns:
+            Timestamp in milliseconds, or None if parsing fails
+
+        Example:
+            "2024-01-01" -> 1704067200000
+            "2024-01-01T12:30:00" -> 1704112200000
+        """
+        try:
+            # Handle ISO format with or without timezone
+            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            return int(dt.timestamp() * 1000)
+        except Exception as e:
+            print(f"Error parsing date: {e}")
+            return None
 
     def get_wallet_info(self, wallet_address: str) -> WalletInfoResponse:
         account_data = self._get("/api/accountv2", {"address": wallet_address})
@@ -85,26 +108,39 @@ class TronService:
             tokens=wallet_tokens,
         )
 
-    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None) -> TransactionsListResponse:
+    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None) -> TransactionsListResponse:
         """
         Get transaction history for a wallet. If token is specified, only returns transactions
         for that specific TRC20 token contract. Otherwise, returns both TRX and TRC20 transactions.
-        
+
         Args:
             wallet_address: The wallet address to query
             limit: Maximum number of transactions to return
             token: Optional TRC20 token contract address to filter transactions
-            
+            start_date: Start date filter in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+            end_date: End date filter in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+
         Returns:
             TransactionsListResponse with transaction history and wallet balances
+
+        Note:
+            TronScan API supports timestamp filtering natively using millisecond timestamps.
         """
         txs: List[Transaction] = []
-        
+
         # Validate parameters
         if limit < 1:
             limit = 1
         elif limit > 100:  # Reasonable upper limit
             limit = 100
+
+        # Convert dates to millisecond timestamps
+        min_timestamp = None
+        max_timestamp = None
+        if start_date:
+            min_timestamp = self._date_to_milliseconds(start_date)
+        if end_date:
+            max_timestamp = self._date_to_milliseconds(end_date)
             
         if token:
             # If token is specified, only get transactions for that specific TRC20 token
@@ -117,6 +153,12 @@ class TronService:
                 "confirm": "true",  # Only confirmed transactions
                 "filterTokenValue": "1"  # Filter out zero-value transfers
             }
+
+            # Add timestamp filters if provided
+            if min_timestamp:
+                trc20_token_params["min_timestamp"] = min_timestamp
+            if max_timestamp:
+                trc20_token_params["max_timestamp"] = max_timestamp
             
             # Try the TRC20 transfers endpoint
             trc20_token_data = self._get("/api/token_trc20/transfers", trc20_token_params)
@@ -230,7 +272,13 @@ class TronService:
                     "db_version": 1,
                     "reverse": "true"
                 }
-                
+
+                # Add timestamp filters if provided
+                if min_timestamp:
+                    alt_params["min_timestamp"] = min_timestamp
+                if max_timestamp:
+                    alt_params["max_timestamp"] = max_timestamp
+
                 alt_data = self._get("/api/token_trc20/transfers-with-status", alt_params)
                 
                 if isinstance(alt_data, dict):
@@ -295,6 +343,13 @@ class TronService:
                 "reverse": True,
                 "db_version": 1,
             }
+
+            # Add timestamp filters if provided
+            if min_timestamp:
+                trx_params["min_timestamp"] = min_timestamp
+            if max_timestamp:
+                trx_params["max_timestamp"] = max_timestamp
+
             trx_data = self._get("/api/transfer/trx", trx_params)
 
             trc20_params = {
@@ -305,6 +360,13 @@ class TronService:
                 "reverse": True,
                 "db_version": 1,
             }
+
+            # Add timestamp filters if provided
+            if min_timestamp:
+                trc20_params["min_timestamp"] = min_timestamp
+            if max_timestamp:
+                trc20_params["max_timestamp"] = max_timestamp
+
             trc20_data = self._get("/api/transfer/trc20", trc20_params)
 
             if isinstance(trx_data, dict):

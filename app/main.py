@@ -123,14 +123,14 @@ async def transactions_list(
     blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
     limit: int = Query(20, description="Number of transactions to return"),
     token: str = Query(None, description="Token contract address to filter transactions"),
-    start_date: str = Query(None, description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Supported for Ethereum, BNB, and Solana chains."),
-    end_date: str = Query(None, description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Supported for Ethereum, BNB, and Solana chains."),
+    start_date: str = Query(None, description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Supported for all chains."),
+    end_date: str = Query(None, description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Supported for all chains."),
     current_user: User = Depends(get_current_user)
 ):
     """
     Get transaction history for a wallet. Combines native and token
     transfers into a unified list.
-    Supports optional date filtering for Ethereum, BNB, and Solana chains.
+    Supports optional date filtering for all supported blockchains.
     Requires authentication.
     """
     chain = blockchain.lower()
