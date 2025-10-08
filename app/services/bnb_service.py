@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 import requests
@@ -152,7 +153,7 @@ class BnbService:
     def _calculate_token_balance(self, wallet_address: str, contract_address: str, transactions: List[Dict[str, Any]]) -> float:
         """Calculate current token balance by summing all transactions"""
         balance = 0.0
-        
+
         for tx in transactions:
             if tx.get("contractAddress") == contract_address:
                 if tx.get("to", "").lower() == wallet_address.lower():
@@ -165,12 +166,87 @@ class BnbService:
                     amount = float(tx.get("value", "0"))
                     decimals = int(tx.get("tokenDecimal", 18))
                     balance -= amount / (10 ** decimals)
-        
+
         return max(0.0, balance)  # Balance can't be negative
 
-    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None) -> TransactionsListResponse:
+    def _get_block_number_by_timestamp(self, timestamp: int, closest: str = "before") -> Optional[int]:
+        """
+        Convert Unix timestamp to block number using Etherscan API.
+
+        Args:
+            timestamp: Unix timestamp in seconds
+            closest: "before" or "after" - get closest block to timestamp
+
+        Returns:
+            Block number or None if request fails
+        """
+        params = {
+            "module": "block",
+            "action": "getblocknobytime",
+            "timestamp": timestamp,
+            "closest": closest
+        }
+        result = self._get(params)
+
+        if result:
+            try:
+                return int(result)
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    def _convert_dates_to_blocks(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> tuple:
+        """
+        Convert date strings to block numbers.
+
+        Args:
+            start_date: Start date in ISO format (YYYY-MM-DD) or datetime string
+            end_date: End date in ISO format (YYYY-MM-DD) or datetime string
+
+        Returns:
+            Tuple of (start_block, end_block)
+        """
+        start_block = 0
+        end_block = 99999999
+
+        if start_date:
+            try:
+                # Parse date string to datetime
+                dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                start_timestamp = int(dt.timestamp())
+
+                # Get block number for start date
+                block = self._get_block_number_by_timestamp(start_timestamp, "after")
+                if block:
+                    start_block = block
+            except Exception as e:
+                print(f"Error parsing start_date: {e}")
+
+        if end_date:
+            try:
+                # Parse date string to datetime
+                dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                end_timestamp = int(dt.timestamp())
+
+                # Get block number for end date
+                block = self._get_block_number_by_timestamp(end_timestamp, "before")
+                if block:
+                    end_block = block
+            except Exception as e:
+                print(f"Error parsing end_date: {e}")
+
+        return start_block, end_block
+
+    def get_transactions_list(self, wallet_address: str, limit: int = 20, token: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None) -> TransactionsListResponse:
         txs: List[Transaction] = []
-        
+
+        # Convert dates to block numbers if provided
+        start_block, end_block = self._convert_dates_to_blocks(start_date, end_date)
+
         if token:
             # If token is specified, only get transactions for that specific token
             token_params = {
@@ -178,8 +254,8 @@ class BnbService:
                 "action": "tokentx",
                 "contractaddress": token,  # This is the key fix - filtering by contract address
                 "address": wallet_address,
-                "startblock": 0,
-                "endblock": 99999999,
+                "startblock": start_block,
+                "endblock": end_block,
                 "page": 1,
                 "offset": limit,
                 "sort": "desc"
@@ -235,21 +311,21 @@ class BnbService:
                 "module": "account",
                 "action": "txlist",
                 "address": wallet_address,
-                "startblock": 0,
-                "endblock": 99999999,
+                "startblock": start_block,
+                "endblock": end_block,
                 "page": 1,
                 "offset": limit,
                 "sort": "desc"
             }
             bnb_data = self._get(bnb_params)
-            
+
             # Get BEP-20 token transactions
             token_params = {
                 "module": "account",
                 "action": "tokentx",
                 "address": wallet_address,
-                "startblock": 0,
-                "endblock": 99999999,
+                "startblock": start_block,
+                "endblock": end_block,
                 "page": 1,
                 "offset": limit,
                 "sort": "desc"

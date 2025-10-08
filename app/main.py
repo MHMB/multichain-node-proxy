@@ -123,24 +123,27 @@ async def transactions_list(
     blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
     limit: int = Query(20, description="Number of transactions to return"),
     token: str = Query(None, description="Token contract address to filter transactions"),
+    start_date: str = Query(None, description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Supported for Ethereum, BNB, and Solana chains."),
+    end_date: str = Query(None, description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Supported for Ethereum, BNB, and Solana chains."),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get transaction history for a wallet.  Combines native and token
+    Get transaction history for a wallet. Combines native and token
     transfers into a unified list.
+    Supports optional date filtering for Ethereum, BNB, and Solana chains.
     Requires authentication.
     """
     chain = blockchain.lower()
     if limit < 1:
         limit = 1
     if chain == "tron":
-        return tron_service.get_transactions_list(wallet_address, limit, token)
+        return tron_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
     if chain == "solana":
-        return solana_service.get_transactions_list(wallet_address, limit, token)
+        return solana_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
     if chain == "ethereum":
-        return ethereum_service.get_transactions_list(wallet_address, limit, token)
+        return ethereum_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
     if chain == "bnb":
-        return bnb_service.get_transactions_list(wallet_address, limit, token)
+        return bnb_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
 @app.get("/contract_details", response_model=ContractDetailsResponse)
