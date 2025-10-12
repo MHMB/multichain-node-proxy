@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import StreamingResponse
+from starlette.responses import StreamingResponse, Response as StarletteResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import db_manager
@@ -106,18 +106,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         response_body = None
         error_message = None
 
-        if self.log_response_body and hasattr(response, 'body'):
+        if self.log_response_body:
             try:
                 if isinstance(response, StreamingResponse):
                     # For streaming responses, we can't easily capture the body
                     response_body = {"type": "streaming_response"}
                 else:
-                    body = response.body
-                    if body:
-                        try:
-                            response_body = json.loads(body.decode())
-                        except (json.JSONDecodeError, UnicodeDecodeError):
-                            response_body = {"raw_body": body.decode(errors='replace')}
+                    # FastAPI responses don't expose body after being sent
+                    # This is a known limitation - we can only log basic response info
+                    response_body = {
+                        "note": "Response body not captured - FastAPI limitation",
+                        "status_code": response.status_code,
+                        "headers": dict(response.headers) if hasattr(response, 'headers') else None
+                    }
             except Exception as e:
                 error_message = f"Failed to capture response body: {str(e)}"
 
@@ -137,7 +138,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def _log_to_database(self, request_data: Dict[str, Any], response_data: Dict[str, Any], response_time_ms: float):
         """Log request/response data to database."""
         try:
-            async with db_manager.get_session() as session:
+            session = await db_manager.get_session()
+            try:
                 log_entry = RequestLog(
                     ip_address=request_data['ip_address'],
                     user_id=request_data['user_id'],
@@ -156,6 +158,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
                 session.add(log_entry)
                 await session.commit()
+            finally:
+                await session.close()
 
         except Exception as e:
             logger.error(f"Database logging failed: {e}")
