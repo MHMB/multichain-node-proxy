@@ -12,6 +12,7 @@ from app.services.tron_service import TronService
 from app.services.solana_service import SolanaService
 from app.services.ethereum_service import EthereumService
 from app.services.bnb_service import BnbService
+from app.services.base_net_service import BaseNetService
 from app.middlewares import (
     authenticate_user,
     create_access_token,
@@ -67,6 +68,7 @@ tron_service = TronService()
 solana_service = SolanaService()
 ethereum_service = EthereumService()
 bnb_service = BnbService()
+base_net_service = BaseNetService()
 
 # Authentication endpoint
 @app.post("/auth/login", response_model=Token)
@@ -98,7 +100,7 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 @app.get("/wallet_info", response_model=WalletInfoResponse)
 async def wallet_info(
     wallet_address: str = Query(..., description="Wallet address to query"),
-    blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
+    blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', 'bnb', or 'base'"),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -115,12 +117,14 @@ async def wallet_info(
         return ethereum_service.get_wallet_info(wallet_address)
     if chain == "bnb":
         return bnb_service.get_wallet_info(wallet_address)
+    if chain == "base":
+        return base_net_service.get_wallet_info(wallet_address)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
 @app.get("/transactions_list", response_model=TransactionsListResponse)
 async def transactions_list(
     wallet_address: str = Query(..., description="Wallet address to query"),
-    blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
+    blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', 'bnb', or 'base'"),
     limit: int = Query(20, description="Number of transactions to return"),
     token: str = Query(None, description="Token contract address to filter transactions"),
     start_date: str = Query(None, description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Supported for all chains."),
@@ -144,12 +148,14 @@ async def transactions_list(
         return ethereum_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
     if chain == "bnb":
         return bnb_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
+    if chain == "base":
+        return base_net_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
 @app.get("/contract_details", response_model=ContractDetailsResponse)
 async def contract_details(
     contract_address: str = Query(..., description="Contract address to query"),
-    blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', or 'bnb'"),
+    blockchain: str = Query(..., description="Blockchain: 'tron', 'solana', 'ethereum', 'bnb', or 'base'"),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -166,6 +172,8 @@ async def contract_details(
         return ethereum_service.get_contract_details(contract_address)
     if chain == "bnb":
         return bnb_service.get_contract_details(contract_address)
+    if chain == "base":
+        return base_net_service.get_contract_details(contract_address)
     raise HTTPException(status_code=400, detail="Unsupported blockchain")
 
 @app.get("/")
