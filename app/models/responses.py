@@ -103,7 +103,7 @@ class Transaction(BaseModel):
 class WalletInfoResponse(BaseModel):
     """Response model for the wallet_info endpoint."""
     wallet_address: str = Field(..., description="Wallet address queried", min_length=1)
-    blockchain: Literal["ethereum", "bnb", "tron", "solana"] = Field(..., description="Blockchain network")
+    blockchain: Literal["ethereum", "bnb", "tron", "solana", "base"] = Field(..., description="Blockchain network")
     native_token: NativeToken = Field(..., description="Native token information")
     tokens: List[WalletToken] = Field(default_factory=list, description="List of token holdings")
     
@@ -133,7 +133,7 @@ class WalletInfoResponse(BaseModel):
 
 class TransactionsListResponse(BaseModel):
     """Response model for the transactions_list endpoint."""
-    blockchain: Literal["ethereum", "bnb", "tron", "solana"] = Field(..., description="Blockchain network")
+    blockchain: Literal["ethereum", "bnb", "tron", "solana", "base"] = Field(..., description="Blockchain network")
     wallet_address: str = Field(..., description="Wallet address queried", min_length=1)
     native_balance: str = Field(..., description="Raw native token balance as string", min_length=1)
     native_balance_formatted: str = Field(..., description="Formatted native token balance as string", min_length=1)
@@ -182,7 +182,7 @@ class TransactionsListResponse(BaseModel):
 class ContractDetailsResponse(BaseModel):
     """Response model for the contract_details endpoint."""
     contract_address: str = Field(..., description="Contract address queried", min_length=1)
-    blockchain: Literal["ethereum", "bnb", "tron", "solana"] = Field(..., description="Blockchain network")
+    blockchain: Literal["ethereum", "bnb", "tron", "solana", "base"] = Field(..., description="Blockchain network")
     name: str = Field(..., description="Contract/token name", min_length=1)
     symbol: str = Field(..., description="Token symbol", min_length=1, max_length=20)
     decimals: int = Field(..., description="Number of decimal places", ge=0, le=18)
@@ -221,7 +221,7 @@ class ContractDetailsResponse(BaseModel):
 # Additional utility models for enhanced type safety
 class BlockchainType(BaseModel):
     """Enum-like model for supported blockchains."""
-    blockchain: Literal["ethereum", "bnb", "tron", "solana"]
+    blockchain: Literal["ethereum", "bnb", "tron", "solana", "base"]
 
 
 class TransactionStatus(BaseModel):
@@ -233,7 +233,7 @@ class TransactionStatus(BaseModel):
 class ApiVersion(BaseModel):
     """API version information for compatibility checking."""
     version: str = Field(..., description="API version", pattern=r"^\d+\.\d+\.\d+$")
-    supported_blockchains: List[Literal["ethereum", "bnb", "tron", "solana"]] = Field(
+    supported_blockchains: List[Literal["ethereum", "bnb", "tron", "solana", "base"]] = Field(
         ..., description="List of supported blockchains"
     )
     deprecated_features: List[str] = Field(default_factory=list, description="List of deprecated features")
@@ -242,7 +242,7 @@ class ApiVersion(BaseModel):
         json_schema_extra={
             "example": {
                 "version": "1.0.0",
-                "supported_blockchains": ["ethereum", "bnb", "tron", "solana"],
+                "supported_blockchains": ["ethereum", "bnb", "tron", "solana", "base"],
                 "deprecated_features": []
             }
         }

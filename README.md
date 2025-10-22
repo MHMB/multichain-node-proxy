@@ -40,7 +40,7 @@ Environment variables are optional but recommended:
 Query parameters:
 
 - `wallet_address` – the public address of the wallet.
-- `blockchain` – one of `ethereum`, `bnb`, `tron`, or `solana`.
+- `blockchain` – one of `ethereum`, `bnb`, `tron`, `solana`, or `base`.
 
 Returns native token balance and a list of held tokens.  For example, on Ethereum you'll see ETH balance plus any ERC‑20 tokens; on BNB Smart Chain you'll see BNB balance plus BEP‑20 tokens; on Tron you'll see TRX balance plus any TRC‑20 tokens; on Solana you'll see SOL balance plus SPL tokens.  Behind the scenes:
 
@@ -53,7 +53,7 @@ Returns native token balance and a list of held tokens.  For example, on Ethereu
 Query parameters:
 
 - `wallet_address` – the address to inspect.
-- `blockchain` – one of `ethereum`, `bnb`, `tron`, or `solana`.
+- `blockchain` – one of `ethereum`, `bnb`, `tron`, `solana`, or `base`.
 - `limit` (optional) – number of records to return (default `20`).
 
 Returns a slice of recent transfers with unified fields (`hash`, `timestamp`, `from`, `to`, `amount`, `token_symbol`, `transaction_fee`, etc.).  Notes on how this is assembled:
@@ -75,7 +75,7 @@ Returns a slice of recent transfers with unified fields (`hash`, `timestamp`, `f
 Query parameters:
 
 - `contract_address` – the token contract or mint address.
-- `blockchain` – one of `ethereum`, `bnb`, `tron`, or `solana`.
+- `blockchain` – one of `ethereum`, `bnb`, `tron`, `solana`, or `base`.
 
 Returns basic token metadata (name, symbol, decimals, total supply, creation time, mintability, burnability, etc.).  Implementation details:
 
