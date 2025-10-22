@@ -206,107 +206,107 @@ class SolanaService:
         self._slot_time_cache[slot] = timestamp
         return timestamp
 
-    def _find_slot_by_timestamp_binary_search(
-        self,
-        target_timestamp: int,
-        low_slot: int,
-        high_slot: int,
-        find_after: bool = True
-    ) -> int:
-        """
-        Binary search to find slot closest to target timestamp.
-
-        Args:
-            target_timestamp: Unix timestamp to search for
-            low_slot: Starting slot (older)
-            high_slot: Ending slot (newer)
-            find_after: If True, find first slot AFTER timestamp
-                       If False, find last slot BEFORE timestamp
-
-        Returns:
-            Slot number closest to the target timestamp
-        """
-        original_low = low_slot
-        original_high = high_slot
-
-        # Binary search for the target slot
-        while low_slot < high_slot:
-            mid_slot = (low_slot + high_slot) // 2
-            mid_time = self._get_block_time(mid_slot)
-
-            # If we can't get the time for this slot, try nearby slots
-            if mid_time is None:
-                # Try next slot
-                mid_time = self._get_block_time(mid_slot + 1)
-                if mid_time is None:
-                    # Try previous slot
-                    mid_time = self._get_block_time(mid_slot - 1)
-                    if mid_time is None:
-                        # Skip this range
-                        if find_after:
-                            low_slot = mid_slot + 1
-                        else:
-                            high_slot = mid_slot - 1
-                        continue
-                    else:
-                        mid_slot = mid_slot - 1
-                else:
-                    mid_slot = mid_slot + 1
-
-            if mid_time < target_timestamp:
-                low_slot = mid_slot + 1
-            elif mid_time > target_timestamp:
-                high_slot = mid_slot
-            else:
-                # Exact match
-                return mid_slot
-
-        # Return the appropriate boundary
-        if find_after:
-            return low_slot if low_slot <= original_high else original_high
-        else:
-            return high_slot if high_slot >= original_low else original_low
-
-    # ALTERNATIVE APPROACH 2: Approximate Estimation (Commented Out)
-    # This approach is faster but less accurate than binary search
-    # def _find_slot_by_timestamp_estimation(
+    # BINARY SEARCH APPROACH (Commented Out)
+    # This approach is more accurate but slower than estimation
+    # def _find_slot_by_timestamp_binary_search(
     #     self,
     #     target_timestamp: int,
-    #     current_slot: int,
-    #     current_time: int,
-    #     buffer_slots: int = 5000
+    #     low_slot: int,
+    #     high_slot: int,
+    #     find_after: bool = True
     # ) -> int:
     #     """
-    #     Estimate slot from timestamp using average slot time.
+    #     Binary search to find slot closest to target timestamp.
     #
     #     Args:
-    #         target_timestamp: Unix timestamp to estimate slot for
-    #         current_slot: Current blockchain slot
-    #         current_time: Current Unix timestamp
-    #         buffer_slots: Safety buffer to add/subtract
+    #         target_timestamp: Unix timestamp to search for
+    #         low_slot: Starting slot (older)
+    #         high_slot: Ending slot (newer)
+    #         find_after: If True, find first slot AFTER timestamp
+    #                    If False, find last slot BEFORE timestamp
     #
     #     Returns:
-    #         Estimated slot number with buffer
-    #
-    #     Note:
-    #         Solana slots are approximately 0.4 seconds each (400ms)
-    #         This is an estimate and may drift due to network conditions
+    #         Slot number closest to the target timestamp
     #     """
-    #     SLOT_TIME_SECONDS = 0.4  # Average time per slot
+    #     original_low = low_slot
+    #     original_high = high_slot
     #
-    #     # Calculate time difference
-    #     time_diff = current_time - target_timestamp
+    #     # Binary search for the target slot
+    #     while low_slot < high_slot:
+    #         mid_slot = (low_slot + high_slot) // 2
+    #         mid_time = self._get_block_time(mid_slot)
     #
-    #     # Estimate slots back from current
-    #     slots_diff = int(time_diff / SLOT_TIME_SECONDS)
+    #         # If we can't get the time for this slot, try nearby slots
+    #         if mid_time is None:
+    #             # Try next slot
+    #             mid_time = self._get_block_time(mid_slot + 1)
+    #             if mid_time is None:
+    #                 # Try previous slot
+    #                 mid_time = self._get_block_time(mid_slot - 1)
+    #                 if mid_time is None:
+    #                     # Skip this range
+    #                     if find_after:
+    #                         low_slot = mid_slot + 1
+    #                     else:
+    #                         high_slot = mid_slot - 1
+    #                     continue
+    #                 else:
+    #                     mid_slot = mid_slot - 1
+    #             else:
+    #                 mid_slot = mid_slot + 1
     #
-    #     # Calculate estimated slot with buffer
-    #     estimated_slot = current_slot - slots_diff
+    #         if mid_time < target_timestamp:
+    #             low_slot = mid_slot + 1
+    #         elif mid_time > target_timestamp:
+    #             high_slot = mid_slot
+    #         else:
+    #             # Exact match
+    #             return mid_slot
     #
-    #     # Add buffer for safety (to avoid missing transactions at boundaries)
-    #     estimated_slot = max(0, estimated_slot - buffer_slots)
-    #
-    #     return estimated_slot
+    #     # Return the appropriate boundary
+    #     if find_after:
+    #         return low_slot if low_slot <= original_high else original_high
+    #     else:
+    #         return high_slot if high_slot >= original_low else original_low
+
+    def _find_slot_by_timestamp_estimation(
+        self,
+        target_timestamp: int,
+        current_slot: int,
+        current_time: int,
+        buffer_slots: int = 5000
+    ) -> int:
+        """
+        Estimate slot from timestamp using average slot time.
+
+        Args:
+            target_timestamp: Unix timestamp to estimate slot for
+            current_slot: Current blockchain slot
+            current_time: Current Unix timestamp
+            buffer_slots: Safety buffer to add/subtract
+
+        Returns:
+            Estimated slot number with buffer
+
+        Note:
+            Solana slots are approximately 0.4 seconds each (400ms)
+            This is an estimate and may drift due to network conditions
+        """
+        SLOT_TIME_SECONDS = 0.4  # Average time per slot
+
+        # Calculate time difference
+        time_diff = current_time - target_timestamp
+
+        # Estimate slots back from current
+        slots_diff = int(time_diff / SLOT_TIME_SECONDS)
+
+        # Calculate estimated slot with buffer
+        estimated_slot = current_slot - slots_diff
+
+        # Add buffer for safety (to avoid missing transactions at boundaries)
+        estimated_slot = max(0, estimated_slot - buffer_slots)
+
+        return estimated_slot
 
     def _convert_dates_to_slots(
         self,
@@ -314,7 +314,7 @@ class SolanaService:
         end_date: Optional[str] = None
     ) -> Tuple[Optional[int], Optional[int]]:
         """
-        Convert date strings to slot numbers using binary search.
+        Convert date strings to slot numbers using estimation approach.
 
         Args:
             start_date: Start date in ISO format (YYYY-MM-DD) or datetime string
@@ -338,29 +338,18 @@ class SolanaService:
         start_slot = None
         end_slot = None
 
-        # Estimate initial search range (approximately 216,000 slots per day)
-        SLOTS_PER_DAY = 216000
-
         if start_date:
             try:
                 # Parse date string to datetime
                 dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
                 start_timestamp = int(dt.timestamp())
 
-                # Estimate how many days back
-                days_back = (current_time - start_timestamp) / 86400
-                estimated_slots_back = int(days_back * SLOTS_PER_DAY)
-
-                # Set search range (with buffer)
-                low_slot = max(0, current_slot - estimated_slots_back - 50000)
-                high_slot = min(current_slot, current_slot - estimated_slots_back + 50000)
-
-                # Binary search for precise slot
-                start_slot = self._find_slot_by_timestamp_binary_search(
+                # Use estimation approach for faster performance
+                start_slot = self._find_slot_by_timestamp_estimation(
                     start_timestamp,
-                    low_slot,
-                    high_slot,
-                    find_after=True
+                    current_slot,
+                    current_time,
+                    buffer_slots=5000
                 )
 
             except Exception as e:
@@ -372,20 +361,12 @@ class SolanaService:
                 dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                 end_timestamp = int(dt.timestamp())
 
-                # Estimate how many days back
-                days_back = (current_time - end_timestamp) / 86400
-                estimated_slots_back = int(days_back * SLOTS_PER_DAY)
-
-                # Set search range (with buffer)
-                low_slot = max(0, current_slot - estimated_slots_back - 50000)
-                high_slot = min(current_slot, current_slot - estimated_slots_back + 50000)
-
-                # Binary search for precise slot
-                end_slot = self._find_slot_by_timestamp_binary_search(
+                # Use estimation approach for faster performance
+                end_slot = self._find_slot_by_timestamp_estimation(
                     end_timestamp,
-                    low_slot,
-                    high_slot,
-                    find_after=False
+                    current_slot,
+                    current_time,
+                    buffer_slots=5000
                 )
 
             except Exception as e:
