@@ -58,10 +58,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Get client IP
         client_ip = self._get_client_ip(request)
 
-        # Get user ID if available
+        # Get user ID from JWT token if available
         user_id = None
-        if hasattr(request.state, 'user') and request.state.user:
-            user_id = getattr(request.state.user, 'username', None)
+        try:
+            # Try to extract from Authorization header
+            auth_header = request.headers.get('authorization', '')
+            if auth_header.startswith('Bearer '):
+                token = auth_header.replace('Bearer ', '')
+                # Decode JWT token to get user_id
+                from jose import jwt
+                from app.config import Config
+                config = Config()
+                payload = jwt.decode(token, config.JWT_SECRET_KEY, algorithms=[config.JWT_ALGORITHM])
+                user_id = payload.get('sub')
+        except Exception:
+            # If token decode fails, try fallback to request.state
+            if hasattr(request.state, 'user') and request.state.user:
+                user_id = getattr(request.state.user, 'username', None)
 
         # Get query parameters
         query_params = dict(request.query_params) if request.query_params else None

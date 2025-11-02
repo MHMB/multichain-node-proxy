@@ -256,7 +256,7 @@ class ErrorResponse(BaseModel):
     error_code: str = Field(..., description="Error code")
     details: Optional[str] = Field(None, description="Additional error details")
     timestamp: str = Field(..., description="Error timestamp")
-    
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -264,6 +264,83 @@ class ErrorResponse(BaseModel):
                 "error_code": "INVALID_ADDRESS",
                 "details": "The provided wallet address is not valid for the specified blockchain",
                 "timestamp": "2024-01-15T10:30:00Z"
+            }
+        }
+    )
+
+
+# Request log models
+class RequestLogResponse(BaseModel):
+    """Response model for a single request log entry."""
+    id: int = Field(..., description="Log entry ID")
+    timestamp: str = Field(..., description="Request timestamp")
+    ip_address: str = Field(..., description="Client IP address")
+    user_id: Optional[str] = Field(None, description="User ID from JWT token")
+    method: str = Field(..., description="HTTP method")
+    endpoint: str = Field(..., description="Request endpoint")
+    query_params: Optional[dict] = Field(None, description="Query parameters")
+    headers: Optional[dict] = Field(None, description="Request headers")
+    request_body: Optional[dict] = Field(None, description="Request body")
+    response_status: int = Field(..., description="HTTP response status code")
+    response_body: Optional[dict] = Field(None, description="Response body")
+    response_time_ms: float = Field(..., description="Response time in milliseconds")
+    blockchain: Optional[str] = Field(None, description="Target blockchain")
+    wallet_address: Optional[str] = Field(None, description="Target wallet address")
+    error_message: Optional[str] = Field(None, description="Error message if any")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "timestamp": "2024-01-15T10:30:00Z",
+                "ip_address": "192.168.1.1",
+                "user_id": "admin",
+                "method": "GET",
+                "endpoint": "/wallet_info",
+                "query_params": {"blockchain": "ethereum", "wallet_address": "0x123..."},
+                "headers": None,
+                "request_body": None,
+                "response_status": 200,
+                "response_body": {"status": "success"},
+                "response_time_ms": 125.5,
+                "blockchain": "ethereum",
+                "wallet_address": "0x123...",
+                "error_message": None
+            }
+        }
+    )
+
+
+class RequestLogsListResponse(BaseModel):
+    """Response model for list of request logs."""
+    total_count: int = Field(..., description="Total number of logs for this user")
+    user_id: str = Field(..., description="User ID being queried")
+    logs: List[RequestLogResponse] = Field(..., description="List of request logs")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "total_count": 100,
+                "user_id": "admin",
+                "logs": [
+                    {
+                        "id": 1,
+                        "timestamp": "2024-01-15T10:30:00Z",
+                        "ip_address": "192.168.1.1",
+                        "user_id": "admin",
+                        "method": "GET",
+                        "endpoint": "/wallet_info",
+                        "query_params": {"blockchain": "ethereum"},
+                        "headers": None,
+                        "request_body": None,
+                        "response_status": 200,
+                        "response_body": {"status": "success"},
+                        "response_time_ms": 125.5,
+                        "blockchain": "ethereum",
+                        "wallet_address": "0x123...",
+                        "error_message": None
+                    }
+                ]
             }
         }
     )

@@ -7,6 +7,8 @@ from app.models.responses import (
     WalletInfoResponse,
     TransactionsListResponse,
     ContractDetailsResponse,
+    RequestLogsListResponse,
+    RequestLogResponse,
 )
 from app.services.tron_service import TronService
 from app.services.solana_service import SolanaService
@@ -25,6 +27,8 @@ from app.middlewares import (
 )
 from app.database import db_manager
 from app.config import Config
+from app.models.database import RequestLog
+from sqlalchemy import select, func
 
 app = FastAPI(title="Multi‑Blockchain API", version="0.1.0")
 
@@ -180,3 +184,73 @@ async def contract_details(
 async def root() -> dict:
     """Basic health check endpoint. No authentication required."""
     return {"status": "ok", "message": "Multi-Blockchain API is running"}
+
+@app.get("/admin/request_logs", response_model=RequestLogsListResponse)
+async def get_request_logs(
+    user_id: str = Query(..., description="User ID to query request logs for"),
+    limit: int = Query(100, description="Maximum number of logs to return", ge=1, le=1000),
+    offset: int = Query(0, description="Number of logs to skip for pagination", ge=0),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get request logs for a specific user ID.
+    Returns paginated list of all API requests made by the specified user.
+    Requires authentication.
+    """
+    try:
+        # Get database session
+        session = await db_manager.get_session()
+
+        try:
+            # Count total logs for this user
+            count_query = select(func.count(RequestLog.id)).where(RequestLog.user_id == user_id)
+            result = await session.execute(count_query)
+            total_count = result.scalar()
+
+            # Query logs for the user with pagination, ordered by timestamp descending
+            query = (
+                select(RequestLog)
+                .where(RequestLog.user_id == user_id)
+                .order_by(RequestLog.timestamp.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+
+            result = await session.execute(query)
+            logs = result.scalars().all()
+
+            # Convert logs to response format
+            log_responses = []
+            for log in logs:
+                log_responses.append(RequestLogResponse(
+                    id=log.id,
+                    timestamp=log.timestamp.isoformat() if log.timestamp else "",
+                    ip_address=log.ip_address,
+                    user_id=log.user_id,
+                    method=log.method,
+                    endpoint=log.endpoint,
+                    query_params=log.query_params,
+                    headers=log.headers,
+                    request_body=log.request_body,
+                    response_status=log.response_status,
+                    response_body=log.response_body,
+                    response_time_ms=log.response_time_ms,
+                    blockchain=log.blockchain,
+                    wallet_address=log.wallet_address,
+                    error_message=log.error_message
+                ))
+
+            return RequestLogsListResponse(
+                total_count=total_count or 0,
+                user_id=user_id,
+                logs=log_responses
+            )
+
+        finally:
+            await session.close()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve request logs: {str(e)}"
+        )
