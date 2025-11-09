@@ -119,17 +119,28 @@ async def wallet_info(
     Requires authentication.
     """
     chain = blockchain.lower()
+    response = None
     if chain == "tron":
-        return tron_service.get_wallet_info(wallet_address)
-    if chain == "solana":
-        return solana_service.get_wallet_info(wallet_address)
-    if chain == "ethereum":
-        return ethereum_service.get_wallet_info(wallet_address)
-    if chain == "bnb":
-        return bnb_service.get_wallet_info(wallet_address)
-    if chain == "base":
-        return base_net_service.get_wallet_info(wallet_address)
-    raise HTTPException(status_code=400, detail="Unsupported blockchain")
+        response = tron_service.get_wallet_info(wallet_address)
+    elif chain == "solana":
+        response = solana_service.get_wallet_info(wallet_address)
+    elif chain == "ethereum":
+        response = ethereum_service.get_wallet_info(wallet_address)
+    elif chain == "bnb":
+        response = bnb_service.get_wallet_info(wallet_address)
+    elif chain == "base":
+        response = base_net_service.get_wallet_info(wallet_address)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported blockchain")
+    
+    wallet_data = await wallet_service.get_wallet_by_address(chain, wallet_address)
+    return WalletInfoResponse(
+        wallet_address=response.wallet_address,
+        blockchain=response.blockchain,
+        native_token=response.native_token,
+        tokens=response.tokens,
+        wallet_data=wallet_data
+    )
 
 @app.get("/transactions_list", response_model=TransactionsListResponse)
 async def transactions_list(
@@ -150,17 +161,31 @@ async def transactions_list(
     chain = blockchain.lower()
     if limit < 1:
         limit = 1
+    response = None
     if chain == "tron":
-        return tron_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
-    if chain == "solana":
-        return solana_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
-    if chain == "ethereum":
-        return ethereum_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
-    if chain == "bnb":
-        return bnb_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
-    if chain == "base":
-        return base_net_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
-    raise HTTPException(status_code=400, detail="Unsupported blockchain")
+        response = tron_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
+    elif chain == "solana":
+        response = solana_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
+    elif chain == "ethereum":
+        response = ethereum_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
+    elif chain == "bnb":
+        response = bnb_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
+    elif chain == "base":
+        response = base_net_service.get_transactions_list(wallet_address, limit, token, start_date, end_date)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported blockchain")
+    
+    wallet_data = await wallet_service.get_wallet_by_address(chain, wallet_address)
+    return TransactionsListResponse(
+        blockchain=response.blockchain,
+        wallet_address=response.wallet_address,
+        native_balance=response.native_balance,
+        native_balance_formatted=response.native_balance_formatted,
+        native_symbol=response.native_symbol,
+        tokens=response.tokens,
+        transactions=response.transactions,
+        wallet_data=wallet_data
+    )
 
 @app.get("/contract_details", response_model=ContractDetailsResponse)
 async def contract_details(

@@ -139,6 +139,22 @@ class WalletService:
         finally:
             await session.close()
 
+    async def get_wallet_by_address(self, blockchain: str, wallet_address: str) -> Optional[WalletResponse]:
+        """Get a wallet by blockchain and address."""
+        session = await db_manager.get_session()
+        try:
+            query = select(Wallet).where(
+                Wallet.blockchain == blockchain.lower(),
+                Wallet.wallet_address == wallet_address
+            )
+            result = await session.execute(query)
+            wallet = result.scalar_one_or_none()
+            if wallet:
+                return self._wallet_to_response(wallet)
+            return None
+        finally:
+            await session.close()
+
     def _wallet_to_response(self, wallet: Wallet) -> WalletResponse:
         """Convert Wallet model to WalletResponse."""
         return WalletResponse(
