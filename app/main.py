@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,9 @@ from app.models.responses import (
     ContractDetailsResponse,
     RequestLogsListResponse,
     RequestLogResponse,
+    WalletCreateRequest,
+    WalletUpdateRequest,
+    WalletResponse,
 )
 from app.services.tron_service import TronService
 from app.services.solana_service import SolanaService
@@ -27,8 +31,9 @@ from app.middlewares import (
 )
 from app.database import db_manager
 from app.config import Config
-from app.models.database import RequestLog
+from app.models.database import RequestLog, Wallet
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 
 app = FastAPI(title="Multi‑Blockchain API", version="0.1.0")
 
@@ -254,3 +259,192 @@ async def get_request_logs(
             status_code=500,
             detail=f"Failed to retrieve request logs: {str(e)}"
         )
+
+@app.post("/wallets", response_model=WalletResponse, status_code=201)
+async def create_wallet(
+    wallet_data: WalletCreateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new wallet entry."""
+    session = await db_manager.get_session()
+    try:
+        wallet = Wallet(
+            type=wallet_data.type,
+            name=wallet_data.name,
+            note=wallet_data.note,
+            owner=wallet_data.owner,
+            exchange_name=wallet_data.exchange_name,
+            wallet_address=wallet_data.wallet_address,
+            blockchain=wallet_data.blockchain.lower()
+        )
+        session.add(wallet)
+        await session.commit()
+        await session.refresh(wallet)
+        return WalletResponse(
+            id=wallet.id,
+            type=wallet.type,
+            name=wallet.name,
+            note=wallet.note,
+            owner=wallet.owner,
+            exchange_name=wallet.exchange_name,
+            wallet_address=wallet.wallet_address,
+            blockchain=wallet.blockchain,
+            created_at=wallet.created_at.isoformat() if wallet.created_at else "",
+            updated_at=wallet.updated_at.isoformat() if wallet.updated_at else ""
+        )
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Wallet with this blockchain and address combination already exists"
+        )
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create wallet: {str(e)}"
+        )
+    finally:
+        await session.close()
+
+@app.get("/wallets/{wallet_id}", response_model=WalletResponse)
+async def get_wallet(
+    wallet_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Get a wallet by ID."""
+    session = await db_manager.get_session()
+    try:
+        query = select(Wallet).where(Wallet.id == wallet_id)
+        result = await session.execute(query)
+        wallet = result.scalar_one_or_none()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Wallet not found")
+        return WalletResponse(
+            id=wallet.id,
+            type=wallet.type,
+            name=wallet.name,
+            note=wallet.note,
+            owner=wallet.owner,
+            exchange_name=wallet.exchange_name,
+            wallet_address=wallet.wallet_address,
+            blockchain=wallet.blockchain,
+            created_at=wallet.created_at.isoformat() if wallet.created_at else "",
+            updated_at=wallet.updated_at.isoformat() if wallet.updated_at else ""
+        )
+    finally:
+        await session.close()
+
+@app.get("/wallets", response_model=List[WalletResponse])
+async def list_wallets(
+    blockchain: Optional[str] = Query(None, description="Filter by blockchain"),
+    owner: Optional[str] = Query(None, description="Filter by owner"),
+    limit: int = Query(100, description="Maximum number of wallets to return", ge=1, le=1000),
+    offset: int = Query(0, description="Number of wallets to skip for pagination", ge=0),
+    current_user: User = Depends(get_current_user)
+):
+    """List wallets with optional filters."""
+    session = await db_manager.get_session()
+    try:
+        query = select(Wallet)
+        if blockchain:
+            query = query.where(Wallet.blockchain == blockchain.lower())
+        if owner:
+            query = query.where(Wallet.owner == owner)
+        query = query.order_by(Wallet.created_at.desc()).limit(limit).offset(offset)
+        result = await session.execute(query)
+        wallets = result.scalars().all()
+        return [
+            WalletResponse(
+                id=w.id,
+                type=w.type,
+                name=w.name,
+                note=w.note,
+                owner=w.owner,
+                exchange_name=w.exchange_name,
+                wallet_address=w.wallet_address,
+                blockchain=w.blockchain,
+                created_at=w.created_at.isoformat() if w.created_at else "",
+                updated_at=w.updated_at.isoformat() if w.updated_at else ""
+            )
+            for w in wallets
+        ]
+    finally:
+        await session.close()
+
+@app.put("/wallets/{wallet_id}", response_model=WalletResponse)
+async def update_wallet(
+    wallet_id: int,
+    wallet_data: WalletUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Update a wallet by ID."""
+    session = await db_manager.get_session()
+    try:
+        query = select(Wallet).where(Wallet.id == wallet_id)
+        result = await session.execute(query)
+        wallet = result.scalar_one_or_none()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Wallet not found")
+        
+        if wallet_data.type is not None:
+            wallet.type = wallet_data.type
+        if wallet_data.name is not None:
+            wallet.name = wallet_data.name
+        if wallet_data.note is not None:
+            wallet.note = wallet_data.note
+        if wallet_data.owner is not None:
+            wallet.owner = wallet_data.owner
+        if wallet_data.exchange_name is not None:
+            wallet.exchange_name = wallet_data.exchange_name
+        
+        await session.commit()
+        await session.refresh(wallet)
+        return WalletResponse(
+            id=wallet.id,
+            type=wallet.type,
+            name=wallet.name,
+            note=wallet.note,
+            owner=wallet.owner,
+            exchange_name=wallet.exchange_name,
+            wallet_address=wallet.wallet_address,
+            blockchain=wallet.blockchain,
+            created_at=wallet.created_at.isoformat() if wallet.created_at else "",
+            updated_at=wallet.updated_at.isoformat() if wallet.updated_at else ""
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update wallet: {str(e)}"
+        )
+    finally:
+        await session.close()
+
+@app.delete("/wallets/{wallet_id}", status_code=204)
+async def delete_wallet(
+    wallet_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a wallet by ID."""
+    session = await db_manager.get_session()
+    try:
+        query = select(Wallet).where(Wallet.id == wallet_id)
+        result = await session.execute(query)
+        wallet = result.scalar_one_or_none()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Wallet not found")
+        await session.delete(wallet)
+        await session.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete wallet: {str(e)}"
+        )
+    finally:
+        await session.close()

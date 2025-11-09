@@ -344,3 +344,37 @@ class RequestLogsListResponse(BaseModel):
             }
         }
     )
+
+
+class WalletCreateRequest(BaseModel):
+    """Request model for creating a wallet."""
+    type: str = Field(..., description="Wallet type", min_length=1)
+    name: str = Field(..., description="Wallet name", min_length=1)
+    note: str = Field(..., description="Wallet note")
+    owner: str = Field(..., description="Wallet owner", min_length=1)
+    exchange_name: Optional[str] = Field(None, description="Exchange name")
+    wallet_address: str = Field(..., description="Wallet address", min_length=1)
+    blockchain: str = Field(..., description="Blockchain name", min_length=1)
+
+
+class WalletUpdateRequest(BaseModel):
+    """Request model for updating a wallet."""
+    type: Optional[str] = Field(None, description="Wallet type")
+    name: Optional[str] = Field(None, description="Wallet name")
+    note: Optional[str] = Field(None, description="Wallet note")
+    owner: Optional[str] = Field(None, description="Wallet owner")
+    exchange_name: Optional[str] = Field(None, description="Exchange name")
+
+
+class WalletResponse(BaseModel):
+    """Response model for wallet data."""
+    id: int = Field(..., description="Wallet ID")
+    type: str = Field(..., description="Wallet type")
+    name: str = Field(..., description="Wallet name")
+    note: Optional[str] = Field(None, description="Wallet note")
+    owner: str = Field(..., description="Wallet owner")
+    exchange_name: Optional[str] = Field(None, description="Exchange name")
+    wallet_address: str = Field(..., description="Wallet address")
+    blockchain: str = Field(..., description="Blockchain name")
+    created_at: str = Field(..., description="Creation timestamp")
+    updated_at: str = Field(..., description="Last update timestamp")
