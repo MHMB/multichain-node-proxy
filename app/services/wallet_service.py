@@ -117,11 +117,79 @@ class WalletService:
         finally:
             await session.close()
 
+    async def update_wallet_by_address(
+        self,
+        blockchain: str,
+        wallet_address: str,
+        wallet_data: WalletUpdateRequest
+    ) -> WalletResponse:
+        """Update a wallet by blockchain and address."""
+        session = await db_manager.get_session()
+        try:
+            query = select(Wallet).where(
+                Wallet.blockchain == blockchain.lower(),
+                Wallet.wallet_address == wallet_address
+            )
+            result = await session.execute(query)
+            wallet = result.scalar_one_or_none()
+            if not wallet:
+                raise HTTPException(status_code=404, detail="Wallet not found")
+            
+            if wallet_data.type is not None:
+                wallet.type = wallet_data.type
+            if wallet_data.name is not None:
+                wallet.name = wallet_data.name
+            if wallet_data.note is not None:
+                wallet.note = wallet_data.note
+            if wallet_data.owner is not None:
+                wallet.owner = wallet_data.owner
+            if wallet_data.exchange_name is not None:
+                wallet.exchange_name = wallet_data.exchange_name
+            
+            await session.commit()
+            await session.refresh(wallet)
+            return self._wallet_to_response(wallet)
+        except HTTPException:
+            raise
+        except Exception as e:
+            await session.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to update wallet: {str(e)}"
+            )
+        finally:
+            await session.close()
+
     async def delete_wallet(self, wallet_id: int) -> None:
         """Delete a wallet by ID."""
         session = await db_manager.get_session()
         try:
             query = select(Wallet).where(Wallet.id == wallet_id)
+            result = await session.execute(query)
+            wallet = result.scalar_one_or_none()
+            if not wallet:
+                raise HTTPException(status_code=404, detail="Wallet not found")
+            await session.delete(wallet)
+            await session.commit()
+        except HTTPException:
+            raise
+        except Exception as e:
+            await session.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete wallet: {str(e)}"
+            )
+        finally:
+            await session.close()
+
+    async def delete_wallet_by_address(self, blockchain: str, wallet_address: str) -> None:
+        """Delete a wallet by blockchain and address."""
+        session = await db_manager.get_session()
+        try:
+            query = select(Wallet).where(
+                Wallet.blockchain == blockchain.lower(),
+                Wallet.wallet_address == wallet_address
+            )
             result = await session.execute(query)
             wallet = result.scalar_one_or_none()
             if not wallet:

@@ -1,6 +1,6 @@
 from datetime import timedelta
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -313,19 +313,21 @@ async def list_wallets(
     """List wallets with optional filters."""
     return await wallet_service.list_wallets(blockchain, owner, limit, offset)
 
-@app.put("/wallets/{wallet_id}", response_model=WalletResponse)
+@app.put("/wallets", response_model=WalletResponse)
 async def update_wallet(
-    wallet_id: int,
-    wallet_data: WalletUpdateRequest,
+    wallet_address: str = Query(..., description="Wallet address to update"),
+    blockchain: str = Query(..., description="Blockchain of the wallet"),
+    wallet_data: WalletUpdateRequest = Body(..., description="Wallet data to update"),
     current_user: User = Depends(get_current_user)
 ):
-    """Update a wallet by ID."""
-    return await wallet_service.update_wallet(wallet_id, wallet_data)
+    """Update a wallet by address and blockchain."""
+    return await wallet_service.update_wallet_by_address(blockchain, wallet_address, wallet_data)
 
-@app.delete("/wallets/{wallet_id}", status_code=204)
+@app.delete("/wallets", status_code=204)
 async def delete_wallet(
-    wallet_id: int,
+    wallet_address: str = Query(..., description="Wallet address to delete"),
+    blockchain: str = Query(..., description="Blockchain of the wallet"),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a wallet by ID."""
-    await wallet_service.delete_wallet(wallet_id)
+    """Delete a wallet by address and blockchain."""
+    await wallet_service.delete_wallet_by_address(blockchain, wallet_address)
