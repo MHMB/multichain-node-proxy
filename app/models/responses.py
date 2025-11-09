@@ -106,7 +106,7 @@ class WalletInfoResponse(BaseModel):
     blockchain: Literal["ethereum", "bnb", "tron", "solana", "base"] = Field(..., description="Blockchain network")
     native_token: NativeToken = Field(..., description="Native token information")
     tokens: List[WalletToken] = Field(default_factory=list, description="List of token holdings")
-    wallet_data: Optional[WalletResponse] = Field(None, description="Wallet data from wallets table if exists")
+    wallet_data: Optional["WalletResponse"] = Field(None, description="Wallet data from wallets table if exists")
     
     model_config = ConfigDict(
         json_schema_extra={
@@ -141,7 +141,7 @@ class TransactionsListResponse(BaseModel):
     native_symbol: str = Field(..., description="Native token symbol", min_length=1)
     tokens: List[TxnTokenBalance] = Field(default_factory=list, description="List of token balances")
     transactions: List[Transaction] = Field(default_factory=list, description="List of transactions")
-    wallet_data: Optional[WalletResponse] = Field(None, description="Wallet data from wallets table if exists")
+    wallet_data: Optional["WalletResponse"] = Field(None, description="Wallet data from wallets table if exists")
     
     model_config = ConfigDict(
         json_schema_extra={
